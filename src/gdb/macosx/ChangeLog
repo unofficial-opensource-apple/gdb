@@ -1,3 +1,85 @@
+2005-03-04  Jim Ingham <jingham@apple.com>
+
+	* macosx-nat-dyld.c (macosx_init_addresses): apply the dyld slide
+	to the address of the dyld notify function.
+	(dyld_starts_here_p): convert to the mach_vm_* interfaces.
+	(macosx_locate_dyld): Ditto.
+	
+2005-03-02  Klee Dienes  <kdienes@apple.com>
+
+        * macosx-nat-dyld-path.c (get_framework_pathname): Make sure we
+        don't search for "Contents/MacOS/Foo" in a NULL string.
+
+2005-02-24  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_frame_function_properties): If you
+	can't get the frame bounds, don't set body_start.
+	
+2005-02-10  Jim Ingham  <jingham@apple.com>
+
+        * macosx-nat-infthread.c (get_application_thread_port): Check the
+        return value of mach_port_names before using the names array.
+
+2005-02-10  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-inferior.c (macosx_child_attach): Fix spelling
+	mistake.
+
+2005-01-21  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-dyld.c (macosx_dyld_add_libraries): When a library gets
+	loaded, call breakpoint_re_set to refresh it's breakpoints.
+	(macosx_solib_add): Call breakpoint_update after we have added the libraries.
+	
+	* macosx-nat-mutils.c (mach_xfer_memory): Use mach_vm_protect, not
+	vm_protect on Tiger.
+	* macosx-nat-watchpoint.c (write_protect_page): Ditto.
+	(unwrite_protect_page): Ditto.
+	
+2005-01-21  Jason Molenda  (jmolenda@apple.com)
+
+        * macosx-nat-dyld-path.c (dyld_library_basename): Look up the
+        user's DYLD_IMAGE_SUFFIX, if any, and strip it from and libraries
+        names we're returning.
+        (dyld_zero_path_info): Zero out the dyld_path_info pointers when we've
+        created a new macosx_status structure.
+        (dyld_init_paths): Free dyld_path_info members if we've previously
+        xstrdup'ed something into them.  Free the contents of home which
+        were previously being leaked.
+        * macosx-nat-dyld-path.h (dyld_zero_path_info): Prototype.
+
+        * macosx-nat-dyld-info.c (dyld_shlib_info_basename_length): Free
+        string returned from dyld_library_basename().
+        (dyld_print_entry_info): Ditto.
+        * macosx-nat-dyld-process.c (dyld_libraries_similar): Ditto.
+
+        * macosx-nat-dyld.c (macosx_dyld_thread_init): Zero out dyld_path_info
+        pointers.
+
+        * macosx-nat-inferior.c (macosx_child_create_inferior): Re-set the
+        dyld_path_info values when we're starting the inferior so we'll pick
+        up any DYLD_IMAGE_SUFFIX type settings that may have been made
+        between the time when the executable file was specified and the
+        file was actually run.
+
+2005-01-17  Jim Ingham  (jingham@apple.com)
+ 
+        * macosx-nat-dyld.c (dyld_set_objfile_load_state): Revert the change
+        to this function from 2004-12-14.  It can cause 
+        re_enable_breakpoints_in_shlibs to get called recursively, which is a 
+        bad thing.
+ 
+
+2005-01-12  Jason Molenda  (jmolenda@apple.com)
+
+        * cached-symfile.h: Include objfiles.h to flag any prototype
+        changes for allocate_objfile between the two.
+        * cached-symfile.c (allocate_objfile): Set syms_only_objfile flag
+        to default value when creating new objfiles.
+        * macosx-nat-dyld-process.c (dyld_is_objfile_loaded): If this
+        objfile is a add-symbol-file'ed, it's shadowing a real objfile and 
+        we should insert any breakpoints associated with it.
+
 2005-01-12  Jason Molenda  (jmolenda@apple.com)
 
 	Merging approved patch from TOT.

@@ -62,6 +62,11 @@
 #define TEXT_SECTION_NAME ".text"
 #endif
 
+/* APPLE LOCAL */
+#ifndef TEXT_SEGMENT_NAME
+#define TEXT_SEGMENT_NAME TEXT_SECTION_NAME
+#endif
+
 #ifndef DATA_SECTION_NAME
 #define DATA_SECTION_NAME ".data"
 #endif
@@ -72,6 +77,7 @@
 
 #ifdef NM_NEXTSTEP
 #include "macosx-nat-dyld.h"
+#include "macosx-nat-dyld-process.h"
 #endif
 
 #define MAPPED_SYMFILES (USE_MMALLOC && HAVE_MMAP)
@@ -618,7 +624,10 @@ syms_from_objfile (struct objfile *objfile,
       /* Find lowest loadable section to be used as starting point for 
          continguous sections. FIXME!! won't work without call to find
 	 .text first, but this assumes text is lowest section. */
-      lower_sect = bfd_get_section_by_name (objfile->obfd, TEXT_SECTION_NAME);
+      /* APPLE LOCAL: Look for the text segment ("__TEXT"), not the section
+         ("__TEXT.__text") because what we're really looking for is the load
+         address of the image, and the section address is offset a bit. */
+      lower_sect = bfd_get_section_by_name (objfile->obfd, TEXT_SEGMENT_NAME);
       if (lower_sect == NULL)
 	bfd_map_over_sections (objfile->obfd, find_lowest_section,
 			       &lower_sect);
@@ -1059,7 +1068,40 @@ symbol_file_add_main (char *args, int from_tty)
 static void
 symbol_file_add_main_1 (char *args, int from_tty, int flags)
 {
-  symbol_file_add (args, from_tty, NULL, 1, flags);
+  int symflags = OBJF_SYM_ALL;
+
+#ifdef NM_NEXTSTEP
+
+  /* APPLE LOCAL: We need to check the desired load rules for type
+     'exec' to determine the correct load level for symfile_objfile.
+     The dyld code will eventually be notified of the change since
+     'mainline' is set to 1 in symbol_file_add_with_addrs_or_offsets.
+
+     Ideally, we would better unify the FSF and Apple shared-library
+     layers, so this call-down wouldn't be necessary. */
+
+  struct dyld_objfile_entry e;
+
+  dyld_objfile_entry_clear (&e);
+  e.allocated = 1;
+
+  e.load_flag = -1;
+
+  e.reason = dyld_reason_executable;
+
+  e.text_name = args;
+  e.text_name_valid = 1;
+
+  e.loaded_name = e.text_name;
+  e.loaded_from_memory = 0;
+  e.loaded_addr = 0;
+  e.loaded_addrisoffset = 1;
+
+  symflags = dyld_default_load_flag (NULL, &e) | dyld_minimal_load_flag (NULL, &e);
+#endif
+
+  symbol_file_add_with_addrs_or_offsets
+    (args, from_tty, NULL, 0, 0, 1, flags, symflags, 0, NULL);
 
 #ifdef HPUXHPPA
   RESET_HP_UX_GLOBALS ();
@@ -1811,6 +1853,7 @@ add_symbol_file_command (char *args, int from_tty)
   int argcnt = 0;
   int sec_num = 0;
   int i;
+  struct objfile *o;   /* APPLE LOCAL */
   const char *const usage_string =
     "usage (%s): add-symbol-file <filename> <text address> [-mapped] [-readnow] [-s <secname> <addr>]*";
 
@@ -1910,7 +1953,10 @@ add_symbol_file_command (char *args, int from_tty)
       if (section_index >= 16)
 	error (usage_string, "too many sections specified.");
 
-      sect_opts[section_index].name = TEXT_SECTION_NAME;
+      /* APPLE LOCAL: Look for the text segment ("__TEXT"), not the section
+         ("__TEXT.__text") because what we're really looking for is the load
+         address of the image, and the section address is offset a bit. */
+      sect_opts[section_index].name = TEXT_SEGMENT_NAME;
       sect_opts[section_index].value = address;
       section_index++;
     }
@@ -1969,9 +2015,11 @@ add_symbol_file_command (char *args, int from_tty)
     error ("Not confirmed.");
 
   
-  symbol_file_add_with_addrs_or_offsets
+  /* APPLE LOCAL: Save return'ed objfile, set the syms_only_objfile flag */
+  o = symbol_file_add_with_addrs_or_offsets
     (filename, from_tty, section_addrs, NULL, 0, 0, flags, symflags, mapaddr, prefix);
-  
+  o->syms_only_objfile = 1; 
+
 #ifdef NM_NEXTSTEP
   update_section_tables ();
 #endif

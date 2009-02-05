@@ -1167,6 +1167,18 @@ dyld_is_objfile_loaded (struct objfile *obj)
   int i;
   struct macosx_dyld_thread_status *status = &macosx_status->dyld_status;
 
+  if (obj == NULL)
+    return 0;
+
+  /* A SYMS_ONLY_OBJFILE is an objfile added by the user, either with
+     add-symbol-file or "sharedlibrary specify-symbol-file"; it shadows
+     an actually loaded & resident objfile, but breakpoints will be
+     associated with the syms-only-objfile.  So under the theory that
+     users don't add-symbol-file things which haven't been loaded yet,
+     set breakpoints in this unconditionally.  */
+  if (obj->syms_only_objfile == 1)
+    return 1;
+
   DYLD_ALL_OBJFILE_INFO_ENTRIES (&status->current_info, e, i)
     if (e->objfile == obj || e->commpage_objfile == obj)
       if (e->dyld_name != NULL
@@ -1326,7 +1338,14 @@ dyld_libraries_similar (struct dyld_objfile_entry *f,
                              &l_is_bundle);
 
       if (flen != llen || strncmp (fbase, lbase, llen) != 0)
-        return 0;
+        {
+          xfree ((char *) fbase);
+          xfree ((char *) lbase);
+          return 0;
+        }
+
+      xfree ((char *) fbase);
+      xfree ((char *) lbase);
 
       if (f_is_framework != l_is_framework)
         return 0;

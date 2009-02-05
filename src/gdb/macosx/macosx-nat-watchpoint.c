@@ -39,6 +39,27 @@
 #include "gdbcore.h"
 #include "gdbthread.h"
 
+#include <AvailabilityMacros.h>
+
+#define MACH64 (MAC_OS_X_VERSION_MAX_ALLOWED >= 1040)
+
+#if MACH64
+
+#include <mach/mach_vm.h>
+
+#else /* ! MACH64 */
+
+#define mach_vm_size_t vm_size_t
+#define mach_vm_address_t vm_address_t
+#define mach_vm_read vm_read
+#define mach_vm_write vm_write
+#define mach_vm_region vm_region
+#define mach_vm_protect vm_protect
+#define VM_REGION_BASIC_INFO_COUNT_64 VM_REGION_BASIC_INFO_COUNT
+#define VM_REGION_BASIC_INFO_64 VM_REGION_BASIC_INFO
+
+#endif /* MACH64 */
+
 extern macosx_inferior_status *macosx_status;
 
 /* Our implementation of hardware watchpoints involves making memory
@@ -138,7 +159,7 @@ write_protect_page (int pid, CORE_ADDR page_start)
     {
 
       kret =
-        vm_protect (macosx_status->task, r_start, 4096, 0,
+        mach_vm_protect (macosx_status->task, r_start, 4096, 0,
                     r_data.protection & ~VM_PROT_WRITE);
       if (kret != KERN_SUCCESS)
         return -1;
@@ -155,7 +176,7 @@ unwrite_protect_page (int pid, CORE_ADDR page_start, int original_permissions)
 {
   kern_return_t kret;
   kret =
-    vm_protect (macosx_status->task, page_start, 4096, 0,
+    mach_vm_protect (macosx_status->task, page_start, 4096, 0,
                 original_permissions);
 }
 

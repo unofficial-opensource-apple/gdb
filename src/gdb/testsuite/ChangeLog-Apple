@@ -1,3 +1,14 @@
+2005-01-21  Jim Ingham  <jingham@apple.com>
+
+	* gdb.base/maint.exp: We are now making breakpoints as -<n> 
+	internal breakpoints, rather than 0.  Change testsuite to
+	reflect that.
+	
+2005-01-13  Jason Molenda  (jmolenda@apple.com)
+
+        * gdb.base/relocate.exp: Expect __TEXT, not __text as per the
+        recent changes to symfile.c.
+
 2004-12-06  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/weak.exp: Update pattern text to recognize the

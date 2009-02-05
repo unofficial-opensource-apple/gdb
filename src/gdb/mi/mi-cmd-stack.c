@@ -826,7 +826,7 @@ mi_cmd_file_list_globals (char *command, char **argv, int argc)
 
 	  ALL_OBJFILES (ofile)
 	    {
-	      if (objfile_matches_name (ofile, shlibname))
+	      if (objfile_matches_name (ofile, shlibname) != objfile_no_match)
 		{
 		  requested_ofile = ofile;
 		  break;

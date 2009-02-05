@@ -2,6 +2,7 @@
 #define __GDB_MACOSX_CACHED_SYMFILE_H__
 
 #include "defs.h"
+#include "objfiles.h"
 
 struct relocation_context
 {
@@ -17,16 +18,15 @@ struct relocation_context
 struct symbol;
 struct type;
 
-/* Declarations for functions defined in objfiles.c */
+#ifndef FSF_OBJFILES
+struct objfile *allocate_objfile (bfd *abfd, int flags, int symflags, CORE_ADDR mapaddr, const char *prefix);
+#endif
 
 extern void mmalloc_protect (PTR md, int flags);
 
 extern struct objfile *cache_bfd (bfd *abfd, const char *prefix, int symflags,
                                   size_t addr, size_t mapaddr,
                                   const char *dest);
-
-extern struct objfile *allocate_objfile (bfd *, int, int, CORE_ADDR,
-                                         const char *);
 
 struct objfile *create_objfile (bfd *abfd);
 

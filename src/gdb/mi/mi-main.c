@@ -1,6 +1,6 @@
 /* MI Command Set.
 
-   Copyright 2000, 2001, 2002, 2003, 2004 Free Software Foundation,
+   Copyright 2000, 2001, 2002, 2003, 2004, 2005 Free Software Foundation,
    Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
@@ -54,6 +54,7 @@
 #include "wrapper.h"
 #include "source.h"
 #include "mi-main.h"
+#include "block.h"
 
 enum
   {
@@ -443,6 +444,11 @@ mi_cmd_thread_select (char *command, char **argv, int argc)
    command will return an error, and not reset the pc.  To force it to
    set the pc anyway, add "-f" before any of the other arguments. 
 
+   If a line in the prologue is specified, the first line with non-prologue
+   code is returned.  This behavior can be suppressed by passing the -n
+   (erm, "-no-prologue-skip"..? Yeah, that's it) option in which case you
+   can move anywhere you want.
+
    Optional -f flag may be provided, preceding other arguments.
    First argument is the thread #.
    Second argument is a FILENAME:LINENO specification.
@@ -465,24 +471,42 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   struct cleanup *old_cleanups;
   struct symbol *old_fun = NULL, *new_fun = NULL;
   int stay_in_function = 1;
+  int avoid_prologue = 1;
   const char *filename;
   int lineno;
   CORE_ADDR new_pc;
 
-  if (argc == 3)
+  /* yay hand-written argv parsers, just what we need more of. */
+
+  /* If the command starts with a -f or -n, record the fact and
+     strip them.  */
+
+  if (argc >= 3)
     {
-      if (strcmp (argv[0], "-f") == 0)
-	{
-	  stay_in_function = 0;
-	  argc--;
-	  argv++;
-	}
+      while (argc > 2)
+        if (argv[0][0] == '-')
+          {
+            if (argv[0][1] == 'f')
+	      {
+	        stay_in_function = 0;
+	        argc--;
+	        argv++;
+	      }
+            else if (argv[0][1] == 'n')
+	      {
+	        avoid_prologue = 0;
+	        argc--;
+	        argv++;
+	      }
+          }
+        else
+          break;
     }
       
   if (argc != 2)
     {
       xasprintf (&mi_error_message,
-		 "mi_cmd_thread_select: USAGE: [-f] threadnum file:line");
+		 "mi_cmd_thread_select: USAGE: [-f] [-n] threadnum file:line");
       return MI_CMD_ERROR;
     }
 
@@ -528,15 +552,27 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
      to set the CLI default source/line #'s and such.  */
   sal = find_pc_line (new_pc, 0);
   if (sal.symtab != s)
-    error ("mi_cmd_thred_set_pc: Found symtab '%s' by filename lookup, but symtab '%s' by PC lookup.", s->filename, sal.symtab->filename);
+    error ("mi_cmd_thread_set_pc: Found symtab '%s' by filename lookup, but symtab '%s' by PC lookup.", s->filename, sal.symtab->filename);
 
+  /* By default we don't want to let someone set the PC into the middle
+     of the prologue or the quality of their debugging experience will 
+     be diminished.  So bump it to the first non-prologue line.  We'll
+     surely still lose in optimized code, but then anyone moving the PC
+     around in optimized code is cruising for a brusing.  */
+
+  new_fun = find_pc_function (new_pc);
+  if (avoid_prologue && new_fun 
+      && BLOCK_START (SYMBOL_BLOCK_VALUE (new_fun)) == new_pc)
+    {
+      sal = find_function_start_sal (new_fun, 1);
+      new_pc = sal.pc;
+    }
   if (stay_in_function)
     {
       old_fun = get_frame_function (get_current_frame());
       if (old_fun == NULL)
 	error ("Can't find the function for old_pc: 0x%s",
 	       paddr_nz (get_frame_pc (get_current_frame ())));
-      new_fun = find_pc_function (new_pc);
       if (new_fun == NULL)
 	error ("Can't find the function for new pc 0x%s", paddr_nz (new_pc));
       if (!SYMBOL_MATCHES_NATURAL_NAME (old_fun, SYMBOL_NATURAL_NAME (new_fun)))
@@ -684,6 +720,32 @@ mi_cmd_file_fix_file (char *command, char **argv, int argc)
 
    do_cleanups (wipe);
    return MI_CMD_DONE;
+}
+
+/* APPLE LOCAL: Is Fix and Continue supported with the current 
+                architecture/osabi?  */
+
+enum mi_cmd_result
+mi_cmd_file_fix_file_is_grooved (char *command, char **argv, int argc)
+{
+  int retval = fix_and_continue_supported ();
+
+  /* For cases where we can't determine if F&C is supported (e.g. a
+     binary hasn't yet been specified), retval is -1 and we'll just
+     report "Supported" to our GUI and hope for the best. */
+
+  if (retval == 1 || retval == -1)
+    {
+      ui_out_field_int (uiout, "supported", 1);
+      ui_out_field_string (uiout, "details", "Yes grooved!");
+    }
+  else
+    {
+      ui_out_field_int (uiout, "supported", 0);
+      ui_out_field_string (uiout, "details", "Groove is gone.");
+    }
+
+  return MI_CMD_DONE;
 }
 
 enum mi_cmd_result

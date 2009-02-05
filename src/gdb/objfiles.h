@@ -478,6 +478,16 @@ struct objfile
     /* This is the actual table.  It isn't exposed outside of symmisc.c, so 
        we leave it a void * here.  */
     void *equivalence_table;
+
+    /* APPLE LOCAL: Mark struct objfile's as to whether they are 
+       symbol files or if they represent file images that contain actual
+       code that is, or will be, loaded into memory.  
+       When a user add-symbol-file's a debug version of a dylib, breakpoints
+       will end up in this symboled objfile, but they're actually inserted
+       into the original stripped objfile.  So we need to short-circuit the
+       "is this objfile resident in memory" check and assume that, in the case
+       of a breakpoint in a hand-added symbol file, it's always resident.  */
+    int syms_only_objfile;
   };
 
 /* Defines for the objfile flag word. */
@@ -576,7 +586,15 @@ extern struct objfile *object_files;
 
 /* Declarations for functions defined in objfiles.c */
 
-/* extern struct objfile *allocate_objfile (bfd *, int); */
+/* APPLE LOCAL: We provide our own allocate_objfile down in
+   macosx/cached-symfile.c.  */
+
+#ifndef FSF_OBJFILES
+struct objfile *allocate_objfile (bfd *abfd, int flags, int symflags, CORE_ADDR mapaddr, const char *prefix);
+#else
+extern struct objfile *allocate_objfile (bfd *, int);
+#endif /* FSF_OBJFILES */
+
 
 extern void init_entry_point_info (struct objfile *);
 
@@ -652,7 +670,15 @@ struct objfile *objfile_get_next (struct objfile *);
 int objfile_restrict_search (int);
 void objfile_add_to_restrict_list (struct objfile *objfile);
 void objfile_clear_restrict_list ();
-int objfile_matches_name (struct objfile *objfile, char *name);
+
+enum objfile_matches_name_return
+  {
+    objfile_no_match,
+    objfile_match_exact,
+    objfile_match_base
+  };
+
+enum objfile_matches_name_return objfile_matches_name (struct objfile *objfile, char *name);
 struct cleanup *make_cleanup_restrict_to_objfile (struct objfile *objfile);
 struct cleanup *make_cleanup_restrict_to_shlib (char *shlib);
 
@@ -665,8 +691,9 @@ struct obj_section *find_pc_sect_in_ordered_sections (CORE_ADDR addr,
 /* APPLE LOCAL: These set the load state for the debug info based on the 
    pc or by objfile.  */
 
-int objfile_set_load_state (struct objfile *, int);
-int pc_set_load_state (CORE_ADDR, int);
+int objfile_set_load_state (struct objfile *, int, int);
+int pc_set_load_state (CORE_ADDR, int, int);
+int objfile_name_set_load_state (char *, int, int);
 
 /* APPLE LOCAL begin fix-and-continue */
 struct symtab *symtab_get_first (struct objfile *, int );

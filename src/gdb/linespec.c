@@ -582,6 +582,9 @@ decode_line_2 (struct symbol *sym_arr[], int nelts, int nsyms, int funfirstline,
       values.sals[i].line = 0;
       values.sals[i].end = 0;
       values.sals[i].pc = SYMBOL_VALUE_ADDRESS (sym_arr[i]);
+      if (funfirstline)
+	values.sals[i].pc = SKIP_PROLOGUE (values.sals[i].pc);
+
       values.sals[i].section = SYMBOL_BFD_SECTION (sym_arr[i]);
       if (!accept_all)
         printf_filtered ("[%d]    %s\n",
@@ -1209,6 +1212,9 @@ decode_objc (char **argptr, int funfirstline, struct symtab *file_symtab,
 	  values.sals[0].line = 0;
 	  values.sals[0].end = 0;
 	  values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
+          if (funfirstline)
+	    values.sals[0].pc = SKIP_PROLOGUE (values.sals[0].pc);
+	    
 	  values.sals[0].section = SYMBOL_BFD_SECTION (sym_arr[0]);
 	}
       return values;

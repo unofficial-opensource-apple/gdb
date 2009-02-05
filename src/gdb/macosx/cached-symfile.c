@@ -195,6 +195,8 @@ allocate_objfile (bfd *abfd, int flags, int symflags, CORE_ADDR mapaddr,
         objfile->check_for_equivalence = 0;
       objfile->equivalence_table = NULL;
 
+      objfile->syms_only_objfile = 0;
+
       link_objfile (objfile);
     }
 

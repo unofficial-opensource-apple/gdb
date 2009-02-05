@@ -1007,8 +1007,8 @@ ppc_frame_function_properties (struct frame_info *next_frame,
     lbounds = *bounds;
   else
     {
-      lbounds.body_start = get_frame_pc (this_frame);
-      lbounds.prologue_start = lbounds.body_start;
+      lbounds.prologue_start = get_frame_pc (this_frame);
+      lbounds.body_start = INVALID_ADDRESS;
       lbounds.epilogue_start = INVALID_ADDRESS;
       lbounds.function_end = INVALID_ADDRESS;
     }

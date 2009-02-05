@@ -22,6 +22,9 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "macosx-nat-dyld-path.h"
+#include "macosx-nat-dyld-info.h"
+#include "macosx-nat-dyld.h"
+#include "macosx-nat-inferior.h"
 
 #include <string.h>
 #include <sys/types.h>
@@ -33,6 +36,8 @@
 #include "inferior.h"
 #include "environ.h"
 #include "gdbcore.h"
+
+extern macosx_inferior_status *macosx_status;
 
 #define assert CHECK_FATAL
 
@@ -279,6 +284,8 @@ get_framework_pathname (const char *name, const char *type, int with_suffix)
   c = look_back_for_slash (name, b);
   if (c == NULL || c == name)
     {
+      if (c == NULL)
+	return (NULL);
       if (strncmp (c + 1, "Versions/", sizeof ("Versions/") - 1) != 0)
         {
           /* Look for the form "Foo.bundle/Contents/MacOS/Foo" */
@@ -318,12 +325,31 @@ get_framework_pathname (const char *name, const char *type, int with_suffix)
     }
 }
 
+/* Given a pathname to a library/bundle/framework, come up with its
+   "short name", or "basename".  Directories are stripped; any
+   suffixes (_debug) are removed, and so forth.
+   PATH is the filename to examine.
+   S is set to the base name string, which is xmalloc()'ed and freeing
+   is the duty of the caller.
+   LEN is the length of the basename.  The string S may actually be longer
+   than LEN, for instance if there is a suffix which we should ignore.
+   IS_FRAMEWORK is true if PATH appears to be a framework.
+   IS_BUNDLE is true if PATH appears to be a bundle.  */
+
 void
-dyld_library_basename (const char *path, const char **s, unsigned int *len,
+dyld_library_basename (const char *path, const char **s, int *len,
                        int *is_framework, int *is_bundle)
 {
   const char *p = NULL;
   const char *q = NULL;
+  const char *dyld_image_suffix = NULL;
+
+  /* If the user specified a DYLD_IMAGE_SUFFIX, get a pointer to that string. */
+  if (macosx_status != NULL
+      && macosx_status->dyld_status.path_info.image_suffix != NULL)
+    {
+      dyld_image_suffix = macosx_status->dyld_status.path_info.image_suffix;
+    }
 
   if (is_framework != NULL)
     {
@@ -341,7 +367,7 @@ dyld_library_basename (const char *path, const char **s, unsigned int *len,
       q = strrchr (path, '/');
       assert (q != NULL);
       assert (*q++ == '/');
-      *s = q;
+      *s = xstrdup (q);
       *len = strlen (q);
       if (is_framework != NULL)
         {
@@ -362,7 +388,7 @@ dyld_library_basename (const char *path, const char **s, unsigned int *len,
       q = strrchr (path, '/');
       assert (q != NULL);
       assert (*q++ == '/');
-      *s = q;
+      *s = xstrdup (q);
       *len = strlen (q);
       if (is_framework != NULL)
         {
@@ -376,17 +402,38 @@ dyld_library_basename (const char *path, const char **s, unsigned int *len,
       return;
     }
 
+  /* Not a bundle, not a framework, just a normal dylib/bundle pathname.
+     If it's something like /usr/lib/libSystem.B_debug.dylib, we want to return
+     libSystem.B.dylib.  We'll need to copy the basename const string to a 
+     writable memory buffer and move that _debug out of the way.  */
+
   q = strrchr (path, '/');
   if (q != NULL)
+    path = ++q;
+
+  char *newstr = xstrdup (path);
+  if (dyld_image_suffix != NULL)
     {
-      assert (*q++ == '/');
-      *s = q;
-      *len = strlen (q);
-      return;
+      char *suffixptr = strstr (newstr, dyld_image_suffix);
+
+  /* If we have a suffix, copy anything AFTER the suffix ("_debug") on top
+     of the suffix.  */
+
+  /* Copy anything after the suffix to a scratch buffer, then the contents
+     of the scratch buffer on top of the suffix.  This is me being paranoid
+     where the stuff after suffix could be longer than the suffix 
+     ("_debug.dylibbbber") and a straight memcpy could have overlap.  */
+
+      if (suffixptr != NULL)
+        {
+          char *tmpbuf = xstrdup (suffixptr + strlen (dyld_image_suffix));
+          strcpy (suffixptr, tmpbuf);
+          xfree (tmpbuf);
+        }
     }
 
-  *s = path;
-  *len = strlen (path);
+  *s = (const char *) newstr;
+  *len = strlen (newstr);
   return;
 }
 
@@ -559,6 +606,21 @@ dyld_resolve_image (const struct dyld_path_info *d, const char *dylib_name)
   return NULL;
 }
 
+/* This function ensures that we have all zero's in our path_info structure D
+   so that dyld_init_paths() doesn't try to xfree() a pointer that is random
+   garbage sitting in memory. */
+
+void
+dyld_zero_path_info (dyld_path_info *d)
+{
+  d->framework_path = NULL;
+  d->library_path = NULL;
+  d->image_suffix = NULL;
+  d->fallback_framework_path = NULL;
+  d->fallback_library_path = NULL;
+  d->insert_libraries = NULL;
+}
+
 void
 dyld_init_paths (dyld_path_info * d)
 {
@@ -577,6 +639,19 @@ dyld_init_paths (dyld_path_info * d)
 
   if (getuid () == geteuid () && getgid () == getegid ())
     {
+      if (d->framework_path != NULL)
+        xfree (d->framework_path);
+      if (d->library_path != NULL)
+        xfree (d->library_path);
+      if (d->fallback_framework_path != NULL)
+        xfree (d->fallback_framework_path);
+      if (d->fallback_library_path != NULL)
+        xfree (d->fallback_library_path);
+      if (d->image_suffix != NULL)
+        xfree (d->image_suffix);
+      if (d->insert_libraries != NULL)
+        xfree (d->insert_libraries);
+
       d->framework_path =
         get_in_environ (inferior_environ, "DYLD_FRAMEWORK_PATH");
       if (d->framework_path != NULL)
@@ -629,4 +704,6 @@ dyld_init_paths (dyld_path_info * d)
         xmalloc (strlen (default_fallback_library_path) + strlen (home) + 1);
       sprintf (d->fallback_library_path, default_fallback_library_path, home);
     }
+
+  xfree (home);
 }

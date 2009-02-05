@@ -86,6 +86,7 @@ struct mi_cmd mi_cmds[] =
   { "file-exec-file", { "exec-file", 1 }, NULL, NULL },
   /* APPLE LOCAL fix-and-continue */
   { "file-fix-file", { NULL, 0 }, NULL, mi_cmd_file_fix_file },
+  { "file-fix-file-is-grooved", { NULL, 0 }, NULL, mi_cmd_file_fix_file_is_grooved },
   { "file-list-exec-sections", { NULL, 0 }, NULL, NULL },
   { "file-list-exec-source-file", { NULL, 0 }, 0, mi_cmd_file_list_exec_source_file},
   { "file-list-exec-source-files", { NULL, 0 }, NULL, NULL },

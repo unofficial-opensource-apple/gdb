@@ -281,23 +281,21 @@ ppc_push_argument (struct ppc_stack_abi *abi,
       if ((len != 1) && (len != 2) && (len != 4) && (len != 8))
 	error ("integer parameter had unexpected size");
 
-      c->greg = abi->first_greg + (ROUND_UP ((c->greg - abi->first_greg), nregs));
-      c->argoffset = ROUND_UP (c->argoffset, nregs * 4);
-	    
-      if ((c->greg + nregs) > (abi->last_greg + 1))
+      if (c->greg <= abi->last_greg)
 	{
-	  c->greg = abi->last_greg + 1;
+	  /* If the parameter fits in the remaining argument registers, write it to
+	     the registers, and to the stack if the abi requires it. */
 
 	  if (do_copy)
-	    write_memory (c->sp + c->argoffset, value_contents, len);
-	  c->argoffset += (nregs * 4);
-	}
-      else
-	{
-	  if (do_copy)
 	    {
+	      /* Split the argument between registers & the stack if it
+		 doesn't fit in the remaining registers.  */
+	      int regs_avaliable = abi->last_greg - c->greg + 1;
+	      if (regs_avaliable >= nregs)
+		regs_avaliable = nregs;
+
 	      ppc_copy_into_greg (current_regcache, c->greg, 
-				  tdep->wordsize, nregs * 4, value_contents);
+				  tdep->wordsize, regs_avaliable * 4, value_contents);
 	    }
 	  if (do_copy && abi->regs_shadow_stack)
 	    write_memory (c->sp + c->argoffset, value_contents, len);
@@ -305,6 +303,14 @@ ppc_push_argument (struct ppc_stack_abi *abi,
 	  c->greg += nregs;
 	  if (abi->regs_shadow_stack)
 	    c->argoffset += (nregs * 4);
+	}
+      else 
+	{
+	  /* If we've filled up the registers, then just write it on the stack. */
+	
+	  if (do_copy)
+	    write_memory (c->sp + c->argoffset, value_contents, len);
+	  c->argoffset += (nregs * 4);
 	}
       break;
     }

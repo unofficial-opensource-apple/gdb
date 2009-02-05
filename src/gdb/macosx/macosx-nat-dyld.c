@@ -62,6 +62,27 @@
 #include "macosx-nat-dyld-process.h"
 #include "cached-symfile.h"
 
+#include <AvailabilityMacros.h>
+
+#define MACH64 (MAC_OS_X_VERSION_MAX_ALLOWED >= 1040)
+
+#if MACH64
+
+#include <mach/mach_vm.h>
+
+#else /* ! MACH64 */
+
+#define mach_vm_size_t vm_size_t
+#define mach_vm_address_t vm_address_t
+#define mach_vm_read vm_read
+#define mach_vm_write vm_write
+#define mach_vm_region vm_region
+#define mach_vm_protect vm_protect
+#define VM_REGION_BASIC_INFO_COUNT_64 VM_REGION_BASIC_INFO_COUNT
+#define VM_REGION_BASIC_INFO_64 VM_REGION_BASIC_INFO
+
+#endif /* MACH64 */
+
 /* For the gdbarch_tdep structure so we can get the wordsize. */
 
 #if defined (__powerpc__) || defined (__ppc__) || defined (__ppc64__)
@@ -166,7 +187,7 @@ static void dyld_info_read_raw (struct macosx_dyld_thread_status *status,
 static void dyld_info_read_raw_data (CORE_ADDR addr, int num,
                                      struct dyld_raw_info *rinfo);
 
-static int dyld_starts_here_p (vm_address_t addr);
+static int dyld_starts_here_p (mach_vm_address_t addr);
 
 static int dyld_info_process_raw (struct dyld_objfile_entry *entry,
                                   CORE_ADDR name, uint64_t modtime,
@@ -296,14 +317,14 @@ macosx_init_addresses (macosx_dyld_thread_status *s)
   dyld_read_raw_infos (s->image_infos, &infos);
 
   s->dyld_version = infos.version;
-  s->dyld_notify = infos.dyld_notify;
+  s->dyld_notify = infos.dyld_notify + s->dyld_slide;
 }
 
 static int
-dyld_starts_here_p (vm_address_t addr)
+dyld_starts_here_p (mach_vm_address_t addr)
 {
-  vm_address_t address = addr;
-  vm_size_t size = 0;
+  mach_vm_address_t address = addr;
+  mach_vm_size_t size = 0;
   vm_region_basic_info_data_64_t info;
   mach_msg_type_number_t info_cnt = sizeof (vm_region_basic_info_data_64_t);
   kern_return_t ret;
@@ -313,8 +334,8 @@ dyld_starts_here_p (vm_address_t addr)
 
   struct mach_header *mh;
 
-  info_cnt = VM_REGION_BASIC_INFO_COUNT;
-  ret = vm_region (macosx_status->task, &address, &size, VM_REGION_BASIC_INFO,
+  info_cnt = VM_REGION_BASIC_INFO_COUNT_64;
+  ret = mach_vm_region (macosx_status->task, &address, &size, VM_REGION_BASIC_INFO_64,
                    (vm_region_info_t) & info, &info_cnt, &object_name);
 
   if (ret != KERN_SUCCESS)
@@ -325,7 +346,7 @@ dyld_starts_here_p (vm_address_t addr)
   if ((info.protection & VM_PROT_READ) == 0)
     return 0;
 
-  ret = vm_read (macosx_status->task, address, size, &data, &data_count);
+  ret = mach_vm_read (macosx_status->task, address, size, &data, &data_count);
 
   if (ret != KERN_SUCCESS)
     {
@@ -431,17 +452,19 @@ macosx_locate_dyld (CORE_ADDR *value, CORE_ADDR hint)
   else
     {
       kern_return_t kret = KERN_SUCCESS;
-      vm_region_basic_info_data_t info;
-      int info_cnt = sizeof (vm_region_basic_info_data_t);
-      vm_address_t test_addr = VM_MIN_ADDRESS;
-      vm_size_t size = 0;
+      vm_region_basic_info_data_64_t info;
+      int info_cnt = sizeof (vm_region_basic_info_data_64_t);
+      mach_vm_address_t test_addr = VM_MIN_ADDRESS;
+      mach_vm_size_t size = 0;
       mach_port_t object_name = PORT_NULL;
       task_t target_task = macosx_status->task;
 
+  info_cnt = VM_REGION_BASIC_INFO_COUNT_64;
+
       do
         {
-          kret = vm_region (target_task, &test_addr,
-                            &size, VM_REGION_BASIC_INFO,
+          kret = mach_vm_region (target_task, &test_addr,
+                            &size, VM_REGION_BASIC_INFO_64,
                             (vm_region_info_t) & info, &info_cnt,
                             &object_name);
 
@@ -596,22 +619,8 @@ macosx_set_start_breakpoint (macosx_dyld_thread_status *s, bfd *exec_bfd)
 
   if (status->dyld_breakpoint == NULL)
     {
-      struct symtab_and_line sal;
-      char *ns = NULL;
-
-      /* We don't have a real function name for the dyld notifier function;
-         just an address.  So use that as the breakpoint string.  */
-
-      ns = concat ("*0x", paddr_nz (status->dyld_notify), NULL);
-
-      init_sal (&sal);
-      sal.pc = status->dyld_notify;
-      status->dyld_breakpoint = set_momentary_breakpoint
-        (sal, null_frame_id, bp_shlib_event);
-      status->dyld_breakpoint->disposition = disp_donttouch;
-      status->dyld_breakpoint->thread = -1;
-      status->dyld_breakpoint->addr_string = ns;
-
+      status->dyld_breakpoint = create_solib_event_breakpoint 
+                                         (status->dyld_notify);
       breakpoints_changed ();
     }
 }
@@ -681,6 +690,20 @@ macosx_dyld_add_libraries (struct macosx_dyld_thread_status *dyld_status,
                                                               "shlibs-added");
             dyld_print_entry_info (entry, shlibnum, 0);
             do_cleanups (notify_cleanup);
+	    /* We have to add objfiles to the list of objfiles which
+	       should be scanned for new breakpoints when we see them
+	       get loaded.
+  
+	       This is necessary because if we try to set a breakpoint
+	       before the objfile gets loaded into memory we might get
+	       it wrong - mostly because we try to move past the
+	       prologue, but the memory for the breakpoint's not
+	       mapped yet, so we can't read the instructions.  When
+	       that happens - for now just in breakpoint_re_set - we
+	       mark the breakpoint as unset.  So we need to try it
+	       again here.  */
+	    if (entry->objfile != NULL)
+	      breakpoint_re_set (entry->objfile);
           }
     }
 }
@@ -764,6 +787,15 @@ macosx_solib_add (const char *filename, int from_tty,
       macosx_dyld_add_libraries (&macosx_status->dyld_status, tinfo, j);
 
       libraries_changed = 1;
+
+      /* Since we want to re-check breakpoints in libraries that get
+	 loaded (to catch cases where we originally didn't insert
+	 a breakpoint because it wasn't loaded and we couldn't read
+	 the memory for the breakpoint) we need to update all the
+	 breakpoints here after we've added all the libraries.  */
+
+      breakpoint_update ();
+
       notify = libraries_changed && dyld_stop_on_shlibs_updated;
     }
   else if (cfm_status->cfm_breakpoint != NULL
@@ -804,6 +836,7 @@ macosx_dyld_thread_init (macosx_dyld_thread_status *s)
   s->dyld_slide = INVALID_ADDRESS;
   s->dyld_version = 0;
   s->dyld_breakpoint = NULL;
+  dyld_zero_path_info (&s->path_info);
 }
 
 void
@@ -1305,16 +1338,16 @@ macosx_dyld_mourn_inferior (void)
       e->dyld_valid = 0;
       e->cfm_container = 0;
       /* This isn't really right - the executable is actually
-         dyld_reason_executable - but I don't think it'll actually cause
-         any problems.  */
+	 dyld_reason_executable - but I don't think it'll actually cause
+	 any problems.  */
       if (e->reason == dyld_reason_dyld)
-        e->reason = dyld_reason_init;
-
+	e->reason = dyld_reason_init;
+      
       /* God as my witness I don't know what all these names are doing in
-         a dyld_objfile_entry.  */
+	 a dyld_objfile_entry.  */
       /* FIXME: xfree dyld_name if I'm not assigning it to text_name? */
       if (e->text_name == NULL && e->dyld_name != NULL)
-        e->text_name = e->dyld_name;
+	e->text_name = e->dyld_name;
       e->dyld_name = NULL;
     }
 }
@@ -1529,11 +1562,7 @@ dyld_objfile_set_load_state (struct objfile *o, int load_state)
           }
         break;
       }
-  /* Since we changed a shared library, we should retry all the pending breakpoints
-     to see if one takes now.  */
-  if (found_it)
-    re_enable_breakpoints_in_shlibs (0);
-  
+
   return found_it;
 }
 

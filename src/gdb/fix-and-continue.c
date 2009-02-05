@@ -53,6 +53,7 @@
 #include "dictionary.h"
 #include "block.h"
 #include <readline/readline.h>
+#include "osabi.h"
 
 #if defined(TARGET_POWERPC)
 #include "ppc-macosx-frameinfo.h"
@@ -490,11 +491,6 @@ fix_command_1 (const char *source_filename,
   if (find_objfile_by_name (bundle_filename))
     error ("Bundle '%s' has already been loaded.", bundle_filename);
 
-  /* Start out by making sure the original objfile that we're 'fixing'
-     has its load level set so debug info is being read in.. */
-  if (solib_filename)
-    raise_objfile_load_level (find_objfile_by_name (solib_filename));
-
   wipe = set_current_language (source_filename);
 
   /* FIXME: Should use a cleanup to free cur if it's a newly allocated
@@ -507,6 +503,11 @@ fix_command_1 (const char *source_filename,
   cur->object_filename = object_filename;
 
   tell_zerolink (cur);
+
+  /* Make sure the original objfile that we're 'fixing'
+     has its load level set so debug info is being read in.. */
+  if (solib_filename)
+    raise_objfile_load_level (find_objfile_by_name (solib_filename));
 
   find_original_object_file_name (cur);
 
@@ -1453,6 +1454,9 @@ do_final_fix_fixups_static_syms (struct block *newstatics,
   struct symbol *cursym, *newsym;         
   struct objfile *original_objfile = find_original_object_file (curfixinfo);
 
+  if (!oldobj)
+    return;
+
   ALL_BLOCK_SYMBOLS (newstatics, j, cursym)
     {
       newsym = lookup_block_symbol (newstatics, SYMBOL_PRINT_NAME (cursym),
@@ -1463,9 +1467,6 @@ do_final_fix_fixups_static_syms (struct block *newstatics,
 
       /* FIXME - skip over non-function syms */
       if (TYPE_CODE (SYMBOL_TYPE (newsym)) != TYPE_CODE_FUNC)
-        continue;
-
-      if (!oldobj)
         continue;
 
       ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (oldobj, oldsymtab)
@@ -1959,13 +1960,13 @@ check_restrictions_locals (struct fixinfo *cur, struct objfile *newobj)
 
           active = in_active_func (funcname, cur->active_functions);
 
+          foundmatch = 0;
           ALL_OBJFILE_SYMTABS_INCL_OBSOLETED (oldobj, oldsymtab)
             {
               if (oldsymtab->primary != 1)
                 continue;
 
               oldbv = BLOCKVECTOR (oldsymtab);
-              foundmatch = 0;
               for (j = FIRST_LOCAL_BLOCK; j < BLOCKVECTOR_NBLOCKS (oldbv); j++)
                 {
                   oldblock = BLOCKVECTOR_BLOCK (oldbv, j);
@@ -1976,21 +1977,25 @@ check_restrictions_locals (struct fixinfo *cur, struct objfile *newobj)
                       check_restrictions_function (funcname, active,
                                                    oldblock, newblock);
                       foundmatch = 1;
+                      break;
                     }
                 }
-              /* This picks up the case where the function was coalesced into
-                 another symtab within the same objfile ("C++").  */
-              if (foundmatch == 0)
+              if (foundmatch)
+                break;
+            }
+
+          /* This picks up the case where the function was coalesced into
+             another symtab within the same objfile ("C++").  */
+          if (!foundmatch)
+            {
+              oldsym = search_for_coalesced_symbol (oldobj, 
+                                                BLOCK_FUNCTION (newblock));
+              if (oldsym) 
                 {
-                  oldsym = search_for_coalesced_symbol (oldobj, 
-                                                    BLOCK_FUNCTION (newblock));
-                  if (oldsym) 
-                    {
-                      oldblock = SYMBOL_BLOCK_VALUE (oldsym);
-                      if (oldblock != newblock)
-                        check_restrictions_function (funcname, active,
-                                                     oldblock, newblock);
-                    }
+                  oldblock = SYMBOL_BLOCK_VALUE (oldsym);
+                  if (oldblock != newblock)
+                    check_restrictions_function (funcname, active,
+                                                 oldblock, newblock);
                 }
             }
         }
@@ -2107,7 +2112,7 @@ check_restriction_cxx_zerolink (struct objfile *obj)
   ALL_OBJFILE_SYMTABS (obj, s)
     if (s->primary && 
         (s->language == language_cplus || s->language == language_objcplus))
-      error ("Target is a C++ program that has not using ZeroLink.  "
+      error ("Target is a C++ program that is not using ZeroLink.  "
              "This is not supported.  To use Fix and Continue on a C++ program, "
              "enable ZeroLink.");
 }
@@ -2732,11 +2737,38 @@ raise_objfile_load_level (struct objfile *obj)
   name = xstrdup (obj->name);
   wipe = make_cleanup (xfree, (char *) name);
 
-  objfile_set_load_state (obj, OBJF_SYM_ALL);
+  objfile_set_load_state (obj, OBJF_SYM_ALL, 1);
  
   obj = find_objfile_by_name (name);
   do_cleanups (wipe);
   return (obj);
+}
+
+/* This function returns 1 if fix and continue is supported, 0 if it
+   isn't supported, and -1 if it is unable to make the determination. */
+
+int
+fix_and_continue_supported (void)
+{
+
+  /* F&C is not supported on non-ppc arches yet. */
+
+#if !defined (TARGET_POWERPC)
+  return 0;
+#endif
+
+  /* Don't have a binary specified OR we've attached to a process and
+     exec_bfd hasn't been set up for us. */
+
+  if (exec_bfd == NULL)
+    return -1;
+
+  /* F&C is not supported on ppc64 yet. */
+
+  if (gdbarch_lookup_osabi (exec_bfd) == GDB_OSABI_DARWIN64)
+    return 0;
+
+  return 1;
 }
 
 void

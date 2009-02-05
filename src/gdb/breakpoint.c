@@ -82,7 +82,7 @@ static void ignore_command (char *, int);
 
 static int breakpoint_re_set_one (void *);
 
-static void breakpoint_re_set_all (void);
+static void breakpoint_re_set_all ();
 
 static void clear_command (char *, int);
 
@@ -286,6 +286,8 @@ int breakpoint_generation = 0;
 /* APPLE LOCAL: Use this variable to quiet the breakpoint setting code
    when RE-SETTING breakpoints.  */
 static int dont_mention = 0;
+/* APPLE LOCAL: Set the objfile associated with a given breakpoint.  */
+static void set_bp_objfile (struct breakpoint *b, struct symtab_and_line *sal);
 
 /* Prototypes for exported functions. */
 
@@ -938,9 +940,21 @@ insert_bp_location (struct bp_location *bpt,
      a breakpoint.  
      FIXME: Obviously the bp_objfile should be in the bp_location, not
      the breakpoint but it's hardly the only mistake in the separation
-     of these two structures.  */
+     of these two structures. 
+     NB: Watchpoints have a null bp_objfile because their expression may
+     not resolve to a single address -- handling all the setting and removing
+     of watchpoints is not easy, so I'm punting for now and inserting them
+     like they've always been inserted.  jsm/2005-01-04 
 
-  if (!target_check_is_objfile_loaded (bpt->owner->bp_objfile))
+     One more sophistication, if we have NO objfile, but we do have an
+     address, that means that the breakpoint was set as a *0x?????
+     type breakpoint, and in that case we should just go ahead and set
+     it.  The is mostly for CodeWarrior, where they pass address
+     breakpoints, but turn off gdb's parsing of CFM load info.  */
+
+  if (bpt->loc_type != bp_loc_hardware_watchpoint
+      && !(target_check_is_objfile_loaded (bpt->owner->bp_objfile)
+	  || (bpt->address != 0x0 && bpt->owner->bp_objfile == NULL)))
     {
       bpt->inserted = 0;
       return 0;
@@ -4520,6 +4534,31 @@ allocate_bp_location (struct breakpoint *bpt, enum bptype bp_type)
   return loc;
 }
 
+/* APPLE LOCAL: Sets the bp_objfile for breakpoint B based
+   on the sal SAL used to set the breakpoint.  */
+
+static
+void set_bp_objfile (struct breakpoint *b, struct symtab_and_line *sal)
+{
+  if (sal->symtab != NULL)
+    b->bp_objfile = sal->symtab->objfile;
+  else if (sal->section != NULL)
+    {
+      struct obj_section *osect;
+      osect = find_pc_sect_section (sal->pc, sal->section);
+      if (osect)
+        b->bp_objfile = osect->objfile;
+    }
+  else
+    {
+      struct obj_section *osect;
+      osect = find_pc_section (sal->pc);
+      if (osect)
+        b->bp_objfile = osect->objfile;
+    }
+}
+/* END APPLE LOCAL  */
+
 /* set_raw_breakpoint() is a low level routine for allocating and
    partially initializing a breakpoint of type BPTYPE.  The newly
    created breakpoint's address, section, source file name, and line
@@ -4574,6 +4613,13 @@ set_raw_breakpoint (struct symtab_and_line sal, enum bptype bptype)
   b->requested_shlib = NULL;
   b->bp_objfile = NULL;
 
+  /* APPLE LOCAL: Set the bp_objfile to the objfile that contains
+     this breakpoint.  Before inserting it, we'll run try
+     target_check_is_objfile_loaded() and if the objfile pointer is
+     0x0 or the objfile hasn't been loaded, the breakpoint won't be
+     inserted.  */
+  set_bp_objfile (b, &sal);
+
   /* Add this breakpoint to the end of the chain
      so that a list of breakpoints will come out in order
      of increasing numbers.  */
@@ -4621,8 +4667,8 @@ create_internal_breakpoint (CORE_ADDR address, enum bptype type)
   b = set_raw_breakpoint (sal, type);
   b->number = internal_breakpoint_number--;
   b->disposition = disp_donttouch;
-  /* APPLE_LOCAL: We added the bp_set_p flag.  */
-  b->bp_set_p = 1;
+  /* APPLE_LOCAL: We added the bp_set_state flag.  */
+  b->bp_set_state = bp_state_set;
 
   return b;
 }
@@ -5467,18 +5513,11 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 	   this breakpoint in.  This way we will only shlib_disable this
 	   breakpoint if the objfile it is in was changed (useful in the
 	   case that more than one objfile shares the same memory address.)  */
-	if (sal.symtab != NULL)
-	  b->bp_objfile = sal.symtab->objfile;
-	else if (sal.section != NULL)
-	  {
-	    struct obj_section *osect;
-	    osect = find_pc_sect_section (sal.pc, sal.section);
-	    if (osect)
-	      b->bp_objfile = osect->objfile;
-	  }
+	set_bp_objfile (b, &sal);
+
 	/* APPLE LOCAL: Mark the breakpoint as set so we don't try to reset
 	   it unless the objfile it was set in gets reread.  */
-	b->bp_set_p = 1;
+	b->bp_set_state = bp_state_set;
 	/* END APPLE LOCAL */
 
 	/* APPLE LOCAL: Add the breakpoint to the new breakpoints list.  */
@@ -5565,7 +5604,7 @@ parse_breakpoint_sals (char **address,
 	     to OBJF_SYM_ALL.  For now there is only one objfile here, but I use the
 	     ALL_OBJFILES iterator in case we pass in a set some day.  */
 	  ALL_OBJFILES (objfile)
-	    objfile_set_load_state (objfile, OBJF_SYM_ALL);
+	    objfile_set_load_state (objfile, OBJF_SYM_ALL, 0);
 	  
 	}
       else
@@ -6617,7 +6656,7 @@ watch_command_1 (char *arg, int accessflag, int from_tty)
   else
     b->cond_string = 0;
 
-  b->bp_set_p = 1;
+  b->bp_set_state = bp_state_set;
 
   frame = block_innermost_frame (exp_valid_block);
   if (frame)
@@ -7354,12 +7393,20 @@ gnu_v3_update_exception_catchpoints (enum exception_event_kind ex_event,
 	    if (!found_it)
 	      {
 		b = create_exception_catchpoint (tempflag, cond_string, 
-					     1, ex_event,
-					     &sal);
+						 1, ex_event,
+						 &sal);
 		if (objfile->name != NULL)
 		  b->requested_shlib = xstrdup(objfile->name);
 		b->bp_objfile = objfile;
-		b->bp_set_p = 1;
+		/* APPLE LOCAL: We may be resetting a catchpoint in a
+		   library that hasn't been loaded yet.  If we do this
+		   when we rerun, we won't be able to look at the text
+		   yet, so we will fail scanning the prologue.  So set
+		   ourselves up to re-do the breakpoint if this happens.  */
+		if (!target_check_is_objfile_loaded (objfile))
+		  b->bp_set_state = bp_state_waiting_load;
+		else
+		  b->bp_set_state = bp_state_set;
 	      }
           }
     }
@@ -8002,8 +8049,7 @@ delete_command (char *arg, int from_tty)
 }
 
 /* Reset a breakpoint given it's struct breakpoint * BINT.
-   The value we return ends up being the return value from catch_errors.
-   Unused in this case.  */
+   The value we return ends up being the return value from catch_errors.  */
 
 static int
 breakpoint_re_set_one (void *bint)
@@ -8018,13 +8064,25 @@ breakpoint_re_set_one (void *bint)
   struct expression *s_exp;
   struct cleanup *restrict_cleanup;
 
-
   switch (b->type)
     {
     case bp_none:
       warning ("attempted to reset apparently deleted breakpoint #%d?",
 	       b->number);
-      return 0;
+      return  0;
+      /* APPLE LOCAL: The gnu_v3 catch & throw breakpoints could exist in shared
+	 libraries, and therefore might very well have slid.  But we can't reset
+         them here or we will mess them up.  Instead, we let the code in
+         tell_breakpoints_objfile_changed delete them, then we reset them in
+         update_exception_catchpoints.  */
+      /* The exception to this is if we already set the catchpoint, and then
+	 we re-ran and reset it before the shared library was loaded so we
+	 miss moving the breakpoint over the prologue.  Then we do need to
+	 re-do the breakpoint here.  */
+    case bp_gnu_v3_catch_throw:
+    case bp_gnu_v3_catch_catch:
+      if (b->bp_set_state != bp_state_waiting_load)
+	break;
     case bp_breakpoint:
     case bp_hardware_breakpoint:
     case bp_catch_load:
@@ -8076,23 +8134,38 @@ breakpoint_re_set_one (void *bint)
       input_radix = b->input_radix;
       s = b->addr_string;
 
-      /* APPLE LOCAL: Narrow the search to the requested_shlib if it exists.  */
+      /* APPLE LOCAL: Narrow the search to the requested_shlib if it
+	 exists.  */
       if (b->requested_shlib != NULL)
 	{
-	  restrict_cleanup = make_cleanup_restrict_to_shlib (b->requested_shlib);
-
-	  if (restrict_cleanup == (void *) -1)
+	  /* We may be reloading a library which we found the wrong
+	     version of at init time.  So up the load level here just
+	     to be safe.  */
+	  if (!objfile_name_set_load_state (b->requested_shlib, OBJF_SYM_ALL, 0))
 	    {
-	      warning ("Couldn't find requested shlib: \"%s\" for breakpoint %d.\n", 
+	      warning ("Couldn't raise load state for requested shlib: \"%s\" "
+		       "for breakpoint %d.\n",
 		       b->requested_shlib, b->number);
 	      return 0;
 	    }
+	  
+	  restrict_cleanup 
+	    = make_cleanup_restrict_to_shlib (b->requested_shlib);
+
+	  if (restrict_cleanup == (void *) -1)
+	    {
+	      warning ("Couldn't find requested shlib: \"%s\" "
+		       "for breakpoint %d.\n", 
+		       b->requested_shlib, b->number);
+	      return 0;
+	    }	  
 	}
       else
 	restrict_cleanup = make_cleanup (null_cleanup, NULL);
 
       /* END APPLE LOCAL */
-      sals = decode_line_1 (&s, 1, (struct symtab *) NULL, 0, (char ***) NULL, NULL);
+      sals = decode_line_1 (&s, 1, (struct symtab *) NULL, 0, 
+			    (char ***) NULL, NULL);
 
       /* BEGIN APPLE LOCAL: Don't go on if we found nothing...  */
       if (NULL == sals.sals)
@@ -8125,6 +8198,32 @@ breakpoint_re_set_one (void *bint)
 		}
 	    }
 
+	  /* END APPLE LOCAL */
+
+	  /* APPLE LOCAL: Set the bp_objfile to the objfile that we found this
+	     breakpoint in.  This way we will only shlib_disable this
+	     breakpoint if the objfile it is in was changed (useful in
+	     the case that more than one objfile shares the same
+	     memory address.)  */
+	  set_bp_objfile (b, &sals.sals[i]);
+
+	  /* This is a bit of a hack, but if we are running a target
+	     that can know about loaded & not loaded objfiles, it
+	     usually reads from target memory.  That means if we tried
+	     to set a breakpoint in an unloaded module, we probably
+	     weren't able to read the prologue, and so we have set
+	     this breakpoint wrong.  So we set the state to
+	     bp_state_waiting_load, and breakpoint update will
+	     specially try to reset these whenever it gets called.  
+
+	    And again, if we have a pure address breakpoint, then just keep setting it.  */
+
+	  if (!(target_check_is_objfile_loaded (b->bp_objfile)
+		|| (b->loc->address != 0x0 && b->bp_objfile == NULL)))
+	    {
+	      b->bp_set_state = bp_state_waiting_load;
+	      return 0;
+	    }
 	  /* END APPLE LOCAL */
 
 	  /* We need to re-set the breakpoint if the address changes... */
@@ -8173,25 +8272,14 @@ breakpoint_re_set_one (void *bint)
 	  b->loc->section = sals.sals[i].section;
 	  b->enable_state = save_enable;	/* Restore it, this worked. */
 
-	  /* APPLE LOCAL: unset the selected objfile, and record the bp_objfile.  */
+	  /* APPLE LOCAL: unset the selected objfile, and record the
+	     bp_objfile.  */
 
 	  do_cleanups (restrict_cleanup);
-	  /* Set the bp_objfile to the objfile that we found this
-	     breakpoint in.  This way we will only shlib_disable this
-	     breakpoint if the objfile it is in was changed (useful in
-	     the case that more than one objfile shares the same
-	     memory address.)  */
-	  if (sals.sals[i].symtab != NULL)
-	    b->bp_objfile = sals.sals[i].symtab->objfile;
-	  else if (sals.sals[i].section != NULL)
-	    {
-	      struct obj_section *osect;
-	      osect = find_pc_sect_section (sals.sals[i].pc, sals.sals[i].section);
-              if (osect != NULL)
-		b->bp_objfile = osect->objfile;
-	    }
+
 	  /* Mark the breakpoint as set so we don't try to reset it.  */
-	  b->bp_set_p = 1;    /* Note that it has been successfully set */
+	  b->bp_set_state = bp_state_set;    /* Note that it has been 
+						successfully set */
 	  /* END APPLE LOCAL */
 
 	  /* Now that this is re-enabled, check_duplicates
@@ -8280,14 +8368,6 @@ breakpoint_re_set_one (void *bint)
       delete_breakpoint (b);
       break;
 
-      /* APPLE LOCAL: The gnu_v3 catch & throw breakpoints could exist in shared
-	 libraries, and therefore might very well have slid.  But we can't reset
-         them here or we will mess them up.  Instead, we let the code in
-         tell_breakpoints_objfile_changed delete them, then we reset them in
-         update_exception_catchpoints.  */
-    case bp_gnu_v3_catch_catch:
-    case bp_gnu_v3_catch_throw:
-
     case bp_catch_catch:
     case bp_catch_throw:
       /* This breakpoint is special, it's set up when the inferior
@@ -8330,26 +8410,63 @@ restrict_search_cleanup (void *ignored)
 void 
 breakpoint_update ()
 {
-  if (breakpoint_generation != symbol_generation) {
-    struct cleanup *old_cleanups;
+  if (breakpoint_generation != symbol_generation) 
+    {
+      
+      struct cleanup *old_cleanups;
+      
+      old_cleanups = make_cleanup (restrict_search_cleanup, NULL);
+      
+      breakpoint_re_set_all ();
+      if (exception_catchpoints_enabled (EX_EVENT_THROW))
+	{
+	  objfile_restrict_search (1);
+	  gnu_v3_update_exception_catchpoints (EX_EVENT_THROW, 0, NULL);
+	}
+      if (exception_catchpoints_enabled (EX_EVENT_CATCH))
+	{
+	  objfile_restrict_search (1);
+	  gnu_v3_update_exception_catchpoints (EX_EVENT_CATCH, 0, NULL);
+	}
+      
+      do_cleanups (old_cleanups);
+            
+      breakpoint_generation = symbol_generation;
+    } 
+  else
+    {
+      /* Always look for any breakpoints that are waiting for their libraries
+	 to reload.  */
+      struct breakpoint *b, *temp;
 
-    old_cleanups = make_cleanup (restrict_search_cleanup, NULL);
-
-    breakpoint_re_set_all ();
-    if (exception_catchpoints_enabled (EX_EVENT_THROW))
+      ALL_BREAKPOINTS_SAFE (b, temp)
       {
-	objfile_restrict_search (1);
-	gnu_v3_update_exception_catchpoints (EX_EVENT_THROW, 0, NULL);
-      }
-    if (exception_catchpoints_enabled (EX_EVENT_CATCH))
-      {
-	objfile_restrict_search (1);
-	gnu_v3_update_exception_catchpoints (EX_EVENT_CATCH, 0, NULL);
-      }
+	struct cleanup *restrict_cleanups;
+	/* Format possible error msg */
+	char *message;
 
-    do_cleanups (old_cleanups);
-    breakpoint_generation = symbol_generation;
-  }
+	if (b->bp_set_state != bp_state_waiting_load
+	    || b->bp_objfile == NULL)
+	  continue;
+
+	/* Note, this isn't strictly necessary, since breakpoint_re_set_one
+	   will make the same check.  But since we know we are waiting till
+	   this breakpoint's objfile gets reloaded into the target, then 
+	   there's no reason to go through all the work done in that function
+	   if it hasn't gotten reloaded.  */
+	if (!(target_check_is_objfile_loaded (b->bp_objfile)
+	      || (b->loc->address != 0x0 && b->bp_objfile == NULL)))
+	  continue;
+
+	message = xstrprintf ("Error in re-setting breakpoint %d:\n",
+			      b->number);
+	restrict_cleanups = make_cleanup_restrict_to_objfile (b->bp_objfile);
+	make_cleanup (xfree, message);
+	catch_errors (breakpoint_re_set_one, b, message, RETURN_MASK_ALL);
+	do_cleanups (restrict_cleanups);
+
+      }
+    }
 }
 
 /* APPLE LOCAL: breakpoint_re_set gets called fairly often, and it is
@@ -8377,7 +8494,8 @@ breakpoint_re_set (struct objfile *objfile)
 }
 
 /* Re-set all breakpoints after symbols have been re-loaded.  */
-void
+
+static void
 breakpoint_re_set_all (void)
 {
   struct breakpoint *b, *temp;
@@ -8388,17 +8506,28 @@ breakpoint_re_set_all (void)
   save_input_radix = input_radix;
   ALL_BREAKPOINTS_SAFE (b, temp)
   {
+
     /* Format possible error msg */
     char *message = xstrprintf ("Error in re-setting breakpoint %d:\n",
 				b->number);
     struct cleanup *cleanups;
 
-    /* APPLE LOCAL: We are going to trust the bp_set_p flag here
+    /* APPLE LOCAL: we are going to unconditionally remake the longjmp
+       breakpoint for every shared library load.  At least delete the
+       extant ones before remaking them...  */
+
+    if (b->type == bp_longjmp_resume || b->type == bp_longjmp)
+      {
+	delete_breakpoint (b);
+	continue;
+      }
+
+    /* APPLE LOCAL: We are going to trust the bp_set_state flag here
        instead of just blindly resetting the breakpoints every time.
        This means that the shlib code needs to track this correctly,
        however.  I am not checking breakpoint type here, presumably
        if some type didn't want this behavior, it wouldn't set the flag.  */
-    if (b->bp_set_p)
+    if (b->bp_set_state == bp_state_set)
       continue;
     /* END APPLE LOCAL */
 
@@ -8434,6 +8563,7 @@ breakpoint_re_set_all (void)
 #if 0  
   create_overlay_event_breakpoint ("_ovly_debug_event");
 #endif
+
   /* END APPLE LOCAL */
 }
 
@@ -8586,7 +8716,7 @@ disable_breakpoint (struct breakpoint *bpt)
 
   /* APPLE LOCAL: Mark disabled breakpoints as unset, since we don't
      track changes in libraries for disabled breakpoints. */
-  bpt->bp_set_p = 0;
+  bpt->bp_set_state = bp_state_unset;
   /* END APPLE LOCAL */
 
   check_duplicates (bpt);
@@ -9129,7 +9259,7 @@ find_finish_breakpoint (void)
 }
 
 /* APPLE LOCAL: We are marking breakpoints set when they are
-   successfully set now, with the bp_set_p flag, so we need to unset
+   successfully set now, with the bp_set_state flag, so we need to unset
    this flag whenever the objfile in which it is set changes.  Do this
    by calling this function with the changed objfile as argument. */
 
@@ -9143,7 +9273,7 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
     {
       ALL_BREAKPOINTS_SAFE (b, tmp)
 	{
-	  if (b->bp_set_p)
+	  if (b->bp_set_state != bp_state_unset)
 	    {
 	      struct obj_section *osect;
 	      
@@ -9165,7 +9295,7 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
 			}
 		      else
 			{
-			  b->bp_set_p = 0;
+			  b->bp_set_state = bp_state_unset;
 			  b->bp_objfile = NULL;
 			}
 		    }
@@ -9177,7 +9307,7 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
 		      if ((osect->addr < b->loc->address) 
 			  && (b->loc->address < osect->endaddr))
 			{
-			  b->bp_set_p = 0;
+			  b->bp_set_state = bp_state_unset;
 			  break;
 			}
 		    }
@@ -9188,7 +9318,7 @@ tell_breakpoints_objfile_changed (struct objfile *objfile)
   else
     {
       ALL_BREAKPOINTS (b)
-	b->bp_set_p = 0;
+	b->bp_set_state = bp_state_unset;
     }
   breakpoint_generation--;
 }

@@ -63,6 +63,7 @@
 #define mach_vm_read vm_read
 #define mach_vm_write vm_write
 #define mach_vm_region vm_region
+#define mach_vm_protect vm_protect
 #define VM_REGION_BASIC_INFO_COUNT_64 VM_REGION_BASIC_INFO_COUNT
 #define VM_REGION_BASIC_INFO_64 VM_REGION_BASIC_INFO
 
@@ -383,12 +384,12 @@ mach_xfer_memory (CORE_ADDR memaddr, char *myaddr,
 
       if (write)
         {
-          kret = vm_protect (macosx_status->task, r_start, r_size, 0,
+          kret = mach_vm_protect (macosx_status->task, r_start, r_size, 0,
                              VM_PROT_READ | VM_PROT_WRITE);
           if (kret != KERN_SUCCESS)
             {
-              kret = vm_protect (macosx_status->task, r_start, r_size, 0,
-                                 0x10 | VM_PROT_READ | VM_PROT_WRITE);
+              kret = mach_vm_protect (macosx_status->task, r_start, r_size, 0,
+                                 VM_PROT_COPY | VM_PROT_READ | VM_PROT_WRITE);
             }
           if (kret != KERN_SUCCESS)
             {
@@ -462,7 +463,7 @@ mach_xfer_memory (CORE_ADDR memaddr, char *myaddr,
                 }
               break;
             }
-          kret = vm_protect (macosx_status->task, r_start, r_size, 0,
+          kret = mach_vm_protect (macosx_status->task, r_start, r_size, 0,
                              r_data.protection);
           if (kret != KERN_SUCCESS)
             {

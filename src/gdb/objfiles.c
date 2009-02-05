@@ -804,6 +804,12 @@ allocate_objfile (bfd *abfd, int flags)
     objfile->check_for_equivalence = 0;
   objfile->equivalence_table = NULL;
 
+  /* APPLE LOCAL: Set SYMS_ONLY_OBJFILE to 1 when this objfile was
+     added by add-symbol-file or sharedlibrary specify-symbol-file,
+     i.e. this objfile is really shadowing another, actual objfile and
+     is just providing symbols.  */
+  objfile->syms_only_objfile = 0;
+
   /* Add this file onto the tail of the linked list of other such files. */
 
   /* Save passed in flag bits. */
@@ -1728,6 +1734,16 @@ objfile_clear_restrict_list ()
     }
 }
 
+static struct objfile_list *
+objfile_set_restrict_list (struct objfile_list *objlist)
+{
+  struct objfile_list *tmp_list;
+
+  tmp_list = objfile_list;
+  objfile_list = objlist;
+  return tmp_list;
+}
+
 struct swap_objfile_list_cleanup
 {
   struct objfile_list *old_list;
@@ -1756,15 +1772,27 @@ make_cleanup_restrict_to_objfile (struct objfile *objfile)
   return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
 }
 
+struct cleanup *
+make_cleanup_restrict_to_objfile_list (struct objfile_list *objlist)
+{
+  struct swap_objfile_list_cleanup *data
+    = (struct swap_objfile_list_cleanup *) xmalloc (sizeof (struct swap_objfile_list_cleanup));
+  data->old_list = objfile_set_restrict_list (objlist);
+  data->restrict_state = objfile_restrict_search (1);
+  return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
+}
+
 /* Check whether the OBJFILE matches NAME.  We want to match either the
    full name, or the base name.  We also want to handle the case where
    OBJFILE comes from a cached symfile.  In that case, the OBJFILE name
    will be the cached symfile name, but the real shlib name will be in
    the OBFD for the OBJFILE.  So in the case of a cached symfile
-   we match against the bfd name instead.  */
+   we match against the bfd name instead.  
+   Returns 1 for an exact match, 2 for a basename only match and 0 for
+   no match.  */
 
 #define CACHED_SYM_SUFFIX ".syms"
-int
+enum objfile_matches_name_return
 objfile_matches_name (struct objfile *objfile, char *name)
 {
   const char *filename;
@@ -1773,7 +1801,7 @@ objfile_matches_name (struct objfile *objfile, char *name)
   const char *real_name;
   
   if (objfile->name == NULL)
-    return 0;
+    return objfile_no_match;
   
   /* See if this is a cached symfile, in which case we use the bfd name
      if it exists.  */
@@ -1788,16 +1816,16 @@ objfile_matches_name (struct objfile *objfile, char *name)
     real_name = objfile->name;
   
   if (strcmp (real_name, name) == 0)
-    return 1;
+    return objfile_match_exact;
   
   filename = lbasename (real_name);
   if (filename == NULL)
-    return 0;
+    return objfile_no_match;
   
   if (strcmp (filename, name) == 0)
-    return 1;
+    return objfile_match_base;
 
-  return 0;
+  return objfile_no_match;
 }
 
 /* Restricts the objfile search to the REQUESTED_SHILB.  Returns
@@ -1807,6 +1835,7 @@ objfile_matches_name (struct objfile *objfile, char *name)
 struct cleanup *
 make_cleanup_restrict_to_shlib (char *requested_shlib)
 {
+  struct objfile_list *requested_list = NULL;
   struct objfile *requested_objfile = NULL;
   struct objfile *tmp_obj;
 
@@ -1818,17 +1847,38 @@ make_cleanup_restrict_to_shlib (char *requested_shlib)
      on the filename, in case the user just gave us the library name.  */
   ALL_OBJFILES (tmp_obj)
     {
-      if (objfile_matches_name (tmp_obj, requested_shlib))
+      enum objfile_matches_name_return match = objfile_matches_name (tmp_obj, requested_shlib); 
+      if (match == objfile_match_exact)
 	{
+	  /* Okay, we found an exact match, so throw away a list if we
+	     we had found any other matches, and break.  */
 	  requested_objfile = tmp_obj;
+	  while (requested_list != NULL)
+	    {
+	      struct objfile_list *list_ptr;
+	      list_ptr = requested_list;
+	      requested_list = list_ptr->next;
+	      xfree (list_ptr);
+	    }
+	  requested_list = NULL;
 	  break;
+	}
+      else if (match == objfile_match_base)
+	{
+	  struct objfile_list *new_element 
+	    = (struct objfile_list *) xmalloc (sizeof (struct objfile_list));
+	  new_element->objfile = tmp_obj;
+	  new_element->next = requested_list;
+	  requested_list = new_element;
 	}
     }
 
-  if (requested_objfile == NULL)
-    return (void *) -1;
+  if (requested_objfile != NULL)
+      return make_cleanup_restrict_to_objfile (requested_objfile);
+  else if (requested_list != NULL)
+    return make_cleanup_restrict_to_objfile_list (requested_list);
   else
-    return make_cleanup_restrict_to_objfile (requested_objfile);
+    return (void *) -1;
 }
 
 
@@ -1879,19 +1929,28 @@ objfile_get_next (struct objfile *in_objfile)
 
 /* APPLE LOCAL set load state  */
 
+static int should_auto_raise_load_state = 0;
+
 /* FIXME: How to make this stuff platform independent???  
    Right now I just have a lame #ifdef NM_NEXTSTEP.  I think
    the long term plan is to move the shared library handling
    into the architecture vector.  At that point,
    dyld_objfile_set_load_state should go there.  */
 
-#ifdef NM_NEXTSTEP
-#include "macosx-nat-dyld.h"
-#endif
+/* objfile_set_load_state: Set the level of symbol loading we are
+   going to do for objfile O to LOAD_STATE.  If you are just doing
+   this as a convenience to the user, set FORCE to 0, and this will
+   allow the value of the "auto-raise-load-level" set variable to
+   override the setting.  But if gdb needs to have this done, set
+   FORCE to 1.  */
 
 int
-objfile_set_load_state (struct objfile *o, int load_state)
+objfile_set_load_state (struct objfile *o, int load_state, int force)
 {
+
+  if (!force && !should_auto_raise_load_state)
+    return 1;
+
   /* FIXME: For now, we are not going to REDUCE the load state.  That is
      because we can't track which varobj's would need to get reconstructed
      if we were to change the state.  The only other option would be to
@@ -1906,10 +1965,19 @@ objfile_set_load_state (struct objfile *o, int load_state)
   return 1;
 #endif
 }
+
+/* Set the symbol loading level of the objfile that includes
+   the address PC to LOAD_STATE.  FORCE has the same meaning
+   as for objfile_set_load_state.  */
+
 int
-pc_set_load_state (CORE_ADDR pc, int load_state)
+pc_set_load_state (CORE_ADDR pc, int load_state, int force)
 {
   struct obj_section *s;
+
+  if (!force && !should_auto_raise_load_state)
+    return 1;
+
   s = find_pc_section (pc);
   if (s == NULL)
     return 0;
@@ -1917,8 +1985,32 @@ pc_set_load_state (CORE_ADDR pc, int load_state)
   if (s->objfile == NULL)
     return 0;
 
-  return objfile_set_load_state (s->objfile, load_state);
+  return objfile_set_load_state (s->objfile, load_state, force);
   
+}
+
+int
+objfile_name_set_load_state (char *name, int load_state, int force)
+{
+  struct objfile *tmp_obj;
+  int retval = 0;
+
+  if (!force && !should_auto_raise_load_state)
+    return 1;
+
+  if (name == NULL)
+    return 0;
+
+  ALL_OBJFILES (tmp_obj)
+    {
+      enum objfile_matches_name_return match 
+	= objfile_matches_name (tmp_obj, name);
+      if (match == objfile_match_exact || match == objfile_match_base)
+	if (objfile_set_load_state (tmp_obj, load_state, force))
+	  retval = 1;
+    }
+  
+  return retval;
 }
 
 /* END APPLE LOCAL set_load_state  */
@@ -2223,6 +2315,14 @@ _initialize_objfiles (void)
   c = add_set_cmd ("use-precompiled-symfiles", class_obscure, var_boolean,
 		   (char *) &use_mapped_symbol_files,
 		   "Set if GDB should use persistent symbol tables by default.",
+		   &setlist);
+  add_show_from_set (c, &showlist);
+
+  /* APPLE LOCAL: We don't want to raise load levels for MetroWerks.  */
+  c = add_set_cmd ("auto-raise-load-levels", class_obscure, var_boolean, 
+		   (char *) &should_auto_raise_load_state, 
+		   "Set if GDB should raise the symbol loading level on"
+		   " all frames found in backtraces.",
 		   &setlist);
   add_show_from_set (c, &showlist);
 

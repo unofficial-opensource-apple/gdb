@@ -1,3 +1,34 @@
+2005-02-21  Jason Molenda  (jmolenda@apple.com)
+
+        * mi-main.c (mi_cmd_file_fix_file_is_grooved): New MI command to
+        show whether Fix and Continue is supported with the current
+        executable or not.
+        * mi-cmds.h: Prototype for above.
+        * mi-cmds.c (mi_cmds): Add an entry for the new MI cmd.
+
+2005-02-17  Jim Ingham <jingham@apple.com>
+
+	* mi-out.c (mi_notify_begin): Store away the whole uiout data,
+	not just the buffer.  This way we will start with a clean state
+	for any lists we make in the notify.
+	(mi_notify_end): restore the state.
+	
+2005-02-10  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-main.c (mi_cmd_thread_set_pc): New thread-set-pc behavior:
+	if setting the PC to a function prologue, advance it out of the
+	prologue.  Can be defeated with the -n command option.
+
+2005-01-28  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-stack.c (mi_cmd_file_list_globals): Use the
+	enum return value from objfile_matches_name.
+	
+2005-01-13  Jim Ingham  <jingham@apple.com>
+
+	* mi-interp.c (mi_command_loop): Prime the uiout with the
+	mi interpreter's uiout.
+	
 2004-10-28  Jim Ingham  <jingham@apple.com>
 
 	* mi-cmd-break.c (mi_cmd_break_insert): Added the "-l"

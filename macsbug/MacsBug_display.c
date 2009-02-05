@@ -250,10 +250,11 @@ void get_screen_size(int *max_rows, int *max_cols)
  the screen to scroll up.  This is needed in enough places to warrant its own routine.
 */
 
+static void flush_buffer(void);
+
 void position_cursor_for_shell_input(void)
 {
     struct winsize size;
-    static void flush_buffer(void);
     
     if (macsbug_screen) {
     	flush_buffer();
@@ -388,13 +389,13 @@ static int write_line(char *fmt, ...)
  | su [n] - scroll the history up n (default 1) line |
  *---------------------------------------------------*/
 
+static void sd(char *arg, int from_tty);
+    
 static void su(char *arg, int from_tty)
 {
     int     i, n;
     History *h1;
     char    negated_arg[25];
-    
-    static void sd(char *arg, int from_tty);
     
     if (!macsbug_screen)
     	return;

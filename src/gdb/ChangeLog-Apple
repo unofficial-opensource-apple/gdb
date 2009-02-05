@@ -1,3 +1,155 @@
+2005-03-04  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_name_set_load_state): New function.
+	* objfiles.h: declare objfile_name_set_load_state.
+	* breakpoint.c (breakpoint_re_set_one): If a shlib is specified
+	for the breakpoint, raise it's load level here just to make sure
+	that someone hasn't downgraded it between the time you first
+	set the breakpoint and now.
+	
+2005-03-02  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (gnu_v3_update_exception_catchpoints): If the library
+	in which we are setting the exception breakpoint hasn't been loaded
+	yet, set the bp_waiting_load state.
+	(breakpoint_re_set_one): Also reset exception breakpoints that are 
+	waiting load.
+	(breakpoint_update): The check for breakpoint type is bogus, don't set
+	the waiting state if you don't intend the breakpoint to be updated.
+	
+2005-02-24  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_set_load_state): Add the force parameter
+	and obey it.
+	(pc_set_load_state): Ditto.
+	(_initialize_objfiles): Add the "set auto-raise-load-levels" flag.
+	* objfiles.h: Change the declarations of objfile_set_load_state
+	and pc_set_load_state.
+	* breakpoint.c (parse_breakpoint_sals): Pass force parameter.
+	* fix-and-continue.c (raise_objfile_load_level): Ditto.
+	* infrun.c (handle_step_into_function): Ditto
+	* stack.c (print_frame_info): Ditto
+	
+	* frame.c (frame_id_equal): Turn off the code_addr = 0 means wildcard
+	behavior altogether.
+
+	* stack.c (symbol_file_add_main_1): Obey the load rules for the
+	main executable.
+	
+2005-02-21  Jason Molenda  (jmolenda@apple.com)
+
+        * fix-and-continue.c (fix_and_continue_supported): New function
+        to determine if F&C is supported for the given executable or not.
+        * defs.h: Prototype for above.
+
+2005-02-17  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (insert_bp_location): Breakpoints that
+	are pure address breakpoints, with no associated objfile
+	should always be inserted.  We assume the user knew what
+	she was doing in this case.
+	(breakpoint_re_set_one): Ditto.
+	(breakpoint_update): Ditto.
+	
+	* linespec.c (decode_line_2): Obey funfirstline for
+	symbols which are in objfiles with no debug info as 
+	well.
+	(decode_objc): Ditto.
+
+2005-02-10  Jim Ingham  <jingham@apple.com>
+
+        * breakpoint.h: Add the bp_set_state enum, use it
+        for the bp_set_state element of struct breakpoint.
+        * breakpoint.c: First, revert the changes of 
+        2005-01-21, this is a better way to do it.
+        Second, everywhere bp_set_p appears, convert to
+        bp_set_state, and use the enum.
+        (breakpoint_re_set_one): If we fail to set the breakpoint
+        all the way because it's objfile isn't loaded yet,
+        don't delete it, mark it as bp_state_waiting_load.
+        (breakpoint_update): If there are any bp_state_waiting_load
+        breakpoints, try to set them in the objfile they were found
+        in.
+
+2005-02-10  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (check_restriction_cxx_zerolink):
+	Fix grammar mistake.
+
+2005-02-01  Jim Ingham  <jingham@apple.com>
+
+	* ppc-sysv-tdep.c (ppc_push_argument): Follow the 
+	Mac OS X ABI and don't 8-byte align long long's.
+	
+	* breakpoint.c (breakpoint_re_set_all): Continue after
+	deleting longjmp breakpoint.
+	
+2005-01-28  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_set_restrict_list): New function.
+	(objfile_matches_name): Return different values for an
+	exact match & a basename match.
+	(make_cleanup_restrict_to_objfile_list): New function.
+	(make_cleanup_restrict_to_shlib): If you have multiple
+	basename only matches, then look in all those matches.
+	* objfiles.h: def'n of objfile_matches_name_return enum.
+	
+2005-01-25  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (breakpoint_re_set_all): Delete the
+	old longjmp breakpoints before making them again.
+	FIXME: Probably should just flag whether we have done 
+	this once, and not do it again.
+	
+2005-01-21  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (set_bp_objfile): New function.
+	(set_raw_breakpoint): use set_bp_objfile.
+	(create_breakpoints): Ditto.
+	(breakpoint_re_set_one): If we can't set the 
+	breakpoint because it's objfile isn't loaded yet
+	return 1 to indicate this to our callers.
+	Also use set_bp_objfile.
+	(breakpoint_re_set_all): Pass up the return value
+	from breakpoint_re_set_one.
+	(breakpoint_update): If we couldn't reset the breakpoint
+	because a library hadn't loaded yet, don't reset the
+	symbol & breakpoint generations, so we will retry setting
+	the breakpoint again next time around.
+	
+2005-01-13  Jason Molenda  (jmolenda@apple.com)
+
+        * fix-and-continue.c (fix_command_1): Raise the load level of
+        the original dylib AFTER we tell zerolink to page it in, not
+        before.
+
+2005-01-13  Jason Molenda  (jmolenda@apple.com)
+
+        * fix-and-continue.c (do_final_fix_fixups_static_syms): This func does
+        nothing if oldobj is null; skip out early.
+        (check_restrictions_locals): Move expensive loop invariant out of
+        the loop.
+
+2005-01-13  Jason Molenda  (jmolenda@apple.com)
+
+        * config/tm-macosx.h (TEXT_SEGMENT_NAME): Define.
+        * objfiles.h: Add prototype for cached symfile version of
+        allocate_objfile() so all callers are using the right prototype.
+        (struct objfile): New field, syms_only_objfile.
+        * objfiles.c (allocate_objfile): Set SYMS_ONLY_OBJFILE field of
+        struct objfile to 0 by default.
+        * symfile.c (TEXT_SEGMENT_NAME): Provide default for non-macosx 
+        platforms.
+        (add_symbol_file_command): Mark objfile that we add via
+        add-symbol-file as such so breakpoint insertion isn't
+        confused.
+        (syms_from_objfile): Use the text segment name, not the
+        text section name, to find the load address of the file.
+        (add_symbol_file_command): Ditto.
+        * symfile.h: Include symtab.h to pick up domain_enum decl.
+        * jv-lang.c (get_dynamics_objfile): Proper # of args to 
+        allocate_objfile().
+
 2005-01-12  Jim Ingham  <jingham@apple.com>
 
 	Merge accepted bugs from TOT.

@@ -1459,7 +1459,7 @@ handle_step_into_function (struct execution_control_state *ecs)
     /* APPLE LOCAL: We need to up the symbol loading level
        before looking to see if we have file & line info here.  */
 
-    pc_set_load_state (ecs->stop_func_start, OBJF_SYM_ALL);
+    pc_set_load_state (ecs->stop_func_start, OBJF_SYM_ALL, 0);
     /* END APPLE LOCAL */
 
     tmp_sal = find_pc_line (ecs->stop_func_start, 0);

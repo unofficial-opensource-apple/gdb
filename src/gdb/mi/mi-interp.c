@@ -523,9 +523,14 @@ mi_command_loop (int mi_version)
   gdb_stdlog = gdb_stderr;
   /* Route target output through the MI. */
   gdb_stdtarg = mi_console_file_new (raw_stdout, "@", '"');
+  /* APPLE LOCAL: Don't make a new uiout.  There's already one in
+     the mi_interp we are starting up, and we need to use that one
+     or we won't get hook messages from interpreter-exec.  */
+#if 0
   /* HACK: Poke the ui_out table directly.  Should we be creating a
      mi_out object wired up to the above gdb_stdout / gdb_stderr? */
   uiout = mi_out_new (mi_version);
+#endif
   /* HACK: Override any other interpreter hooks.  We need to create a
      real event table and pass in that. */
   init_ui_hook = 0;
@@ -551,6 +556,9 @@ mi_command_loop (int mi_version)
   show_load_progress = mi_load_progress;
   print_frame_more_info_hook = mi_print_frame_more_info;
 
+  /* Set the uiout to the interpreter's uiout.  */
+  uiout = interp_ui_out (NULL);
+  
   /* Turn off 8 bit strings in quoted output.  Any character with the
      high bit set is printed using C's octal format. */
   sevenbit_strings = 1;

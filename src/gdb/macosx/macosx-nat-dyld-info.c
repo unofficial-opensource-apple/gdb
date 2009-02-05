@@ -905,6 +905,7 @@ dyld_shlib_info_basename_length (struct dyld_objfile_info *s,
             {
               baselen = tfnamelen;
             }
+          xfree ((char *) tfname);
         }
     }
 
@@ -956,6 +957,7 @@ dyld_shlib_info_basename_length (struct dyld_objfile_info *s,
               {
                 baselen = tfnamelen;
               }
+            xfree ((char *) tfname);
           }
       }
   }
@@ -1035,6 +1037,7 @@ dyld_print_entry_info (struct dyld_objfile_entry *j, int shlibnum, int baselen)
       dyld_library_basename (name, &tfname, &tfnamelen, &is_framework,
                              &is_bundle);
       fname = savestring (tfname, tfnamelen);
+      xfree ((char *) tfname);
     }
 
   if (j->dyld_valid)

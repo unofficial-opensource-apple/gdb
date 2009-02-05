@@ -471,7 +471,7 @@ print_frame_info (struct frame_info *fi, int level, int source, int args)
   /* APPLE LOCAL: if we find a frame in a backtrace, increase the load level
      to ALL...  */
 
-  pc_set_load_state (get_frame_pc (fi), OBJF_SYM_ALL);
+  pc_set_load_state (get_frame_pc (fi), OBJF_SYM_ALL, 0);
 
   /* If fi is not the innermost frame, that normally means that fi->pc
      points to *after* the call instruction, and we want to get the

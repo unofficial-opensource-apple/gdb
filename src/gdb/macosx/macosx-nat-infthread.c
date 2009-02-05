@@ -306,14 +306,20 @@ get_application_thread_port (thread_t our_name)
   mach_port_type_array_t types;
   mach_msg_type_number_t types_count;
   mach_port_t match = 0;
+  kern_return_t ret;
 
-  mach_port_names (macosx_status->task, &names, &names_count, &types,
+  ret = mach_port_names (macosx_status->task, &names, &names_count, &types,
                    &types_count);
+  if (ret != KERN_SUCCESS)
+    {
+      warning ("Error %d getting port names from mach_port_names", ret);
+      return (thread_t) 0x0;
+    }
+
   for (i = 0; i < names_count; i++)
     {
       mach_port_t local_name;
       mach_msg_type_name_t local_type;
-      kern_return_t ret;
 
       ret = mach_port_extract_right (macosx_status->task,
                                      names[i],

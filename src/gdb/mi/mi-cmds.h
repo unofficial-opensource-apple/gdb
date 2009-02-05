@@ -96,6 +96,7 @@ extern mi_cmd_args_ftype mi_cmd_exec_until;
 extern mi_cmd_args_ftype mi_cmd_exec_interrupt;
 extern mi_cmd_argv_ftype mi_cmd_exec_status;
 extern mi_cmd_argv_ftype mi_cmd_file_fix_file;
+extern mi_cmd_argv_ftype mi_cmd_file_fix_file_is_grooved;
 extern mi_cmd_argv_ftype mi_cmd_file_list_exec_source_file;
 extern mi_cmd_argv_ftype mi_cmd_exec_safe_call;
 extern mi_cmd_argv_ftype mi_cmd_file_list_statics;

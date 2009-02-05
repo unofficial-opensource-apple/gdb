@@ -1210,7 +1210,7 @@ macosx_child_attach (char *args, int from_tty)
               error ("Unable to attach to process-id %d: %s (%d).\n"
                      "This request requires that the target process be neither setuid nor "
                      "setgid and have the same real userid as the debugger, or that the "
-                     "debugger be running with adminstrator privileges.",
+                     "debugger be running with administrator privileges.",
                      pid, strerror (errno), errno);
             }
           else
@@ -1515,6 +1515,8 @@ macosx_child_create_inferior (char *exec_file, char *allargs, char **env)
     return;
 
   macosx_clear_start_breakpoint ();
+  dyld_init_paths (&macosx_status->dyld_status.path_info);
+
   if (inferior_auto_start_dyld_flag)
     {
       macosx_dyld_init (&macosx_status->dyld_status, exec_bfd);

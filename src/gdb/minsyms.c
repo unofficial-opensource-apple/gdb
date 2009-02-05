@@ -491,21 +491,26 @@ lookup_minimal_symbol_by_pc_section_from_objfile
 	  /* If "section" specified, skip any symbol from wrong section */
 	  /* This is the new code that distinguishes it from the old function */
 	  if (section)
-	    while (hi >= 0
-		   /* Some types of debug info, such as COFF,
-		      don't fill the bfd_section member, so don't
-		      throw away symbols on those platforms.  */
-		   && SYMBOL_BFD_SECTION (&msymbol[hi]) != NULL
-		   && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
-	      --hi;
-
-	  if (hi >= 0
-	      && ((best_symbol == NULL) ||
-		  (SYMBOL_VALUE_ADDRESS (best_symbol) <
-		   SYMBOL_VALUE_ADDRESS (&msymbol[hi]))))
 	    {
-	      best_symbol = &msymbol[hi];
+	      while (hi >= 0 
+		     /* Some types of debug info, such as COFF,
+			don't fill the bfd_section member, so don't
+			throw away symbols on those platforms.  */
+		     /* APPLE LOCAL: On MacOS X the only symbols which
+			don't have sections are eh frame info, and we
+			pretty much never want to find them accidentally.
+			&& SYMBOL_BFD_SECTION (&msymbol[hi]) != NULL */
+		     && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
+		--hi;
+	      /* If there are NO section matches at all, return NULL
+		 rather than accidentally returning the lowest msymbol
+		 in the objfile. */
+	      if (hi == 0 
+		  && SYMBOL_BFD_SECTION (&msymbol[hi]) != section)
+		return NULL;
 	    }
+	  if (hi >= 0)
+	      best_symbol = &msymbol[hi];
 	}
     }
   return (best_symbol);
