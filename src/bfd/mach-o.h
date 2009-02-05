@@ -38,7 +38,8 @@ typedef enum bfd_mach_o_ppc_thread_flavour
     BFD_MACH_O_PPC_THREAD_STATE = 1,
     BFD_MACH_O_PPC_FLOAT_STATE = 2,
     BFD_MACH_O_PPC_EXCEPTION_STATE = 3,
-    BFD_MACH_O_PPC_VECTOR_STATE = 4
+    BFD_MACH_O_PPC_VECTOR_STATE = 4,
+    BFD_MACH_O_PPC_THREAD_STATE_64 = 5
   }
 bfd_mach_o_ppc_thread_flavour;
 
@@ -93,6 +94,8 @@ typedef enum bfd_mach_o_load_command_type
   }
 bfd_mach_o_load_command_type;
 
+#define BFD_MACH_O_CPU_IS64BIT 0x1000000
+
 typedef enum bfd_mach_o_cpu_type
   {
     BFD_MACH_O_CPU_TYPE_VAX = 1,
@@ -107,11 +110,9 @@ typedef enum bfd_mach_o_cpu_type
     BFD_MACH_O_CPU_TYPE_I860 = 15,
     BFD_MACH_O_CPU_TYPE_ALPHA = 16,
     BFD_MACH_O_CPU_TYPE_POWERPC = 18,
-    BFD_MACH_O_CPU_TYPE_POWERPC_64 = 19
+    BFD_MACH_O_CPU_TYPE_POWERPC_64 = 18 | BFD_MACH_O_CPU_IS64BIT
   }
 bfd_mach_o_cpu_type;
-
-#define BFD_MACH_O_CPU_IS64BIT 0x1000000
 
 typedef enum bfd_mach_o_cpu_subtype
   {

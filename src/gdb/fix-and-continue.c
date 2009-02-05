@@ -59,7 +59,9 @@
 #include "ppc-macosx-tdep.h"
 #endif /* TARGET_POWERPC */
 
+#ifdef NM_NEXTSTEP
 #include "macosx-nat-dyld-process.h"
+#endif
 
 
 /* A list of all active threads, and the functions those threads

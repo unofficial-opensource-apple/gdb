@@ -1,3 +1,33 @@
+2004-12-02  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.h: Reset BFD_MACH_O_CPU_TYPE_POWERPC_64 to the real
+	value.  19 is gone...
+	* mach-o.c (bfd_mach_o_convert_architecture): Change to
+	accomodate new BFD_MACH_O_CPU_TYPE_POWERPC_64.
+	(bfd_mach_o_scan_start_address): Add a case for PPC64.
+	
+2004-11-24  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.c (bfd_mach_o_core_fetch_environment): In some cases
+	(when the core file is malformed) we can end up exiting the
+	main loop without having found the environment.  In that case
+	we should return an error code.
+	
+2004-11-23  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.c (bfd_mach_o_scan_read_symtab): Nuke another
+	place where we had a hard-coded size for nlist.
+	
+2004-11-15  Jim Ingham  <jingham@apple.com>
+
+	* mach-o.c (bfd_mach_o_scan_read_dysymtab): Don't hard-code
+	the size of an nlist entry, get it from the mach-o version
+	like everybody else.
+	
+2004-11-10  Jason Molenda  (jmolenda@apple.com)
+
+	* mach-o.c (bfd_mach_o_archive_p): Comment.
+
 2004-10-14  Klee Dienes  <kdienes@apple.com>
 
 	* mach-o.c (BFD_MACH_O_CPU_IS64BIT): New constant.

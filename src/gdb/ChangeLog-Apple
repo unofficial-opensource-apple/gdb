@@ -1,3 +1,198 @@
+2005-01-12  Jim Ingham  <jingham@apple.com>
+
+	Merge accepted bugs from TOT.
+	* source.c: Remove unused copy of ambiguous_line_spec.
+	* cli/cli-cmds.c (ambiguous_line_spec): Check for a NULL
+	symtab before accessing it.
+	
+        * objfiles.c (free_objfile): Move the call to
+        delete_objfile_from_ordered_sections to before we close the bfd.
+        We use the bfd sections in that call...
+
+2004-12-22  Jim Ingham  <jingham@apple.com>
+
+	* target.h: Add to_check_is_objfile_loaded to target vector.
+	* target.c: INHERIT & de_fault to_check_is_objfile_loaded. 
+	* breakpoint.c (insert_bp_location): Switch to using
+	target_check_is_objfile_loaded.
+	
+2004-12-09  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c: Move macosx-nat-dyld-process.h inclusion to
+	the right spot.
+
+2004-12-08  Jason Molenda  (jmolenda@apple.com)
+
+	* fix-and-continue.c (get_fixed_file): Include macosx-nat-dyld-process.h	to get prototype.
+	* infcall.c (hand_function_call): Include macosx-nat-infthread.h to 
+	get prototype.
+	* objfiles.c (objfile_purge_solib): Add comment.
+	(objfile_set_load_state): Include macosx-nat-dyld.h to get prototype.
+	* breakpoint.c (insert_bp_location): Re-enable code to check if an
+	objfile is actually resident in memory; use the NM_NEXTSTEP conditional
+	to suppress the macosx/ function call when we're building host x host
+	w/o the dyld interface code.
+
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* breakpoint.c (insert_bp_location): This won't work for host x host
+	builds where we don't have any of the macosx-nat-dyld* files build. :/
+	Comment it out for tonight's submission so I can find another way to do
+	this somehow.
+
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* breakpoint.c (insert_bp_location): Check if the objfile is resident
+	in memory before we insert the breakpoint.
+
+2004-12-04  Eric Albert <ejalbert@apple.com>
+
+	* config/i386/macosx.mh (MACOSX_FILES): Add macosx-nat.o to match
+	a change from 2003-03-13. [3677049]
+
+2004-11-30  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-tdep.h (struct gdbarch_tdep): Add a 'wordsize' field so the
+	macosx-nat-dyld.c code doesn't need ppc vs x86 ifdefs.
+	* i386-tdep.c (i386_gdbarch_init): Set wordsize to 4.
+
+2004-11-30  Jason Molenda  (jmolenda@apple.com)
+
+	* main.c (captured_main): Call source_file () instead of 
+	source_command () when we have a pathname for a file to source and
+	we don't want that pathname going through the argv parser and messing
+	things up.
+	* top.h (source_file): Prototype.
+	* cli/cli-cmds.c (source_command): Move the actual sourcing over
+	to source_file ().  This function now handles the argument parsing.
+	(source_file): New function, which handles the sourcing.
+
+2004-11-24  Jim Ingham  <jingham@apple.com>
+
+        * breakpoint.c (break_command_2): Make sure the index 
+	is in range before looking up the sal with it.
+	(breakpoint_re_set_one): Don't use the osect if we 
+	failed to find it.
+	
+	* ppc-sysv-tdep.c (ppc_push_argument): If we are passed
+	a 8 byte value that comes from a register (value->regno != -1)
+	and we are running a 32 bit app, then artificially strip
+	the upper 4 bytes.
+	
+2004-11-23  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (safe_breakpoint_sals_to_pc): New
+	function.
+	(wrap_breakpoint_sals_to_pc): New function.
+	(break_command_2): Use safe_breakpoint_sals_to_pc.
+	
+2004-11-15  Jim Ingham  <jingham@apple.com>
+
+	* defs.h: Backport the def'n of return_value enum from
+	the current gdb.
+	* infcmd.c (print_return_value): Ditto.
+	* values.c (using_struct_return): adjust test for the
+	new return values.
+	* ppc-sysv-tdep.c (ppc_darwin_abi_return_value): Fetch the
+	struct return from r3 so we can display the value.
+	
+2004-11-12  Jim Ingham  <jingham@apple.com>
+
+	* ppc-sysv-tdep.c (ppc_copy_into_greg): New function.
+	(ppc_copy_from_greg): New function.
+	(ppc_push_argument): Use ppc_copy_into_greg.
+	(ppc_push_arguments): ditto.
+	(do_ppc_sysv_return_value): Use ppc_copy_from_greg.
+	
+2004-11-05  Jim Ingham  <jingham@apple.com>
+
+	* gdbtypes.c (init_type): If we are defining a long double type
+	whose length is not the standard length, then make an explicit
+	floatformat for it so we won't get confused.
+	* ppc-sysv-tdep.c (ppc_push_argument): Don't assume floating point
+	numbers are only 4 & 8 bytes.  Also don't cast a 16 byte long double
+	down to an 8 byte one.
+	* (do_ppc_sysv_return_value): A 16 byte long double is passed back
+	through $f1 & $f2.
+	* stabsread.c (define_symbol): When we go to name a previously unnamed
+	symbol, if is not the same length as the canonical long double, make 
+	a floatformat for it.
+	
+2004-11-04  Jim Ingham  <jingham@inghji.apple.com>
+
+	* objc-lang.c (find_implementation_from_class): Handle the mlist
+	being NULL, and the CLS_NO_METHOD_ARRAY case, where the method list
+	is an array of methods, rather than a pointer to the first chunk.
+
+2004-11-02  Jason Molenda  (jmolenda@apple.com)
+
+	* arch-utils.c: Add two small caches of the size of registers and
+	the offsets of registers, to speed up the (vastly common) computation
+	of these.
+	(reg_cache_hack__architecture_changed_hook): Reset the caches on
+	arch change.
+	(generic_register_size): Set cache if not initialized; use cache if 
+	initialized.
+	(generic_register_byte): Ditto.
+	* arch-utils.h: Prototype for reg_cache_hack__architecture_changed_hook.
+	* gdbarch.c (deprecated_current_gdbarch_select_hack): Call reg cache
+	hook.
+
+2004-10-26  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (print_one_breakpoint): Print the shared
+	library the breakpoint was set in if we are using the MI.
+
+	* breakpoint.c (break_command_2): Add "indices" parameter,
+	and if we are using the MI and have multiple hits, use this
+	to determine which of the hits we should accept.
+	* (resolve_pending_breakpoint): Pass indices parameter.
+	* (re_enable_breakpoints_in_shlib): Ditto
+	* (create_breakpoints): Ditto
+	* (gdb_breakpoint): Ditto, also add an indices parameter 
+	so the MI can provide the indices.
+	* gdb.h: Change declaration of gdb_breakpoints
+
+	* infcmd.c (continue_command): If you aren't at a breakpoint,
+	we weren't handling the ignore argument to continue properly
+	because we didn't remember that bpstat_num returns -1 for 
+	no breakpoint...
+
+	* linespec.c (minsym_found): Add "canonical" argument.
+	* (decode_variable): Pass canonical to minsym_found.
+	* (minsym_found): Look for an "equivalent symbol" if this
+	objfile has them.  Set the canonical name as well.
+	* minsyms.c (prim_record_minimal_symbol_and_info): Build the
+	table of "equivalent symbols".
+	* objfiles.c (allocate_objfile): Hacky way to get us to check for
+	equivalent symbols in libSystem only.  FIXME: find some target
+	way to do this.
+	* (free_objfile): Delete the equivalence table if needed.
+	* objfile.h: Add equivalence table pointer to the objfile.
+	* symfile.c (reread_symbols): Clear out the equivalence table.
+	* symmisc.c (equivalence_table_initialize): New function.
+	* (equivalence_table_delete): New function.
+	* (equivalence_table_add): New function.
+	* (find_equivalent_msymbol): New function.
+	* symtab.h: Declare the public functions above.
+	
+2004-10-26  Jason Molenda  (jmolenda@apple.com)
+
+	* eval.c (evaluate_subexp_standard): Look in the objc runtime
+	to see if a method is defined for an object directly, instead of
+	making a couple calls into the inferior to ask the objc runtime
+	the same thing.  Stub out the FSF code in a vain attempt to avoid
+	extraneous conflicts.
+	* objc-lang.c (find_implementation): Make extern, for above.
+	* objc-lang.h (find_implementation): Add prototype.
+	* objc-exp.y: I don't believe this code to look up a symbol
+	as a class is ever correct, so prefix it with a symbol name
+	lookup first.  This means that a class name w/o debug info
+	(that previously was looked up by this code) will be skipped,
+	but I am doubtful this is used for anything, and the symbol
+	lookup is cheap.  (and the objc runtime call we were previously
+	making all over the place was expensive.)
+
 2004-10-13  Jim Ingham  <jingham@inghji.apple.com>
 
 	* thread.c (thread_apply_all_command): Use "safe_execute_command"

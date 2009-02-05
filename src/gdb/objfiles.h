@@ -463,6 +463,21 @@ struct objfile
     /* FIXME/carlton-2003-06-27: Delete this in a few years once
        "possible namespace symbols" go away.  */
     struct symtab *cp_namespace_symtab;
+
+    /* APPLE LOCAL: libSystem contains two versions of some symbols,
+       the "posix compliant" and the old style versions.  For compatibility
+       reasons, the old style version is the one with the original function's
+       symbol name.  The other is <orig>$SOME_TAG.  We want break to find
+       both of these, so we build up a table of equivalences here, and then
+       check them in break.  */
+
+    /* This is usually 0 since we don't want to do this check for every
+       shared library.  */
+    int check_for_equivalence;
+
+    /* This is the actual table.  It isn't exposed outside of symmisc.c, so 
+       we leave it a void * here.  */
+    void *equivalence_table;
   };
 
 /* Defines for the objfile flag word. */

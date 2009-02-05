@@ -1248,7 +1248,22 @@ define_symbol (CORE_ADDR valu, char *string, const char *prefix,
           	}
 	    }
 	  else
-	    TYPE_NAME (SYMBOL_TYPE (sym)) = DEPRECATED_SYMBOL_NAME (sym);
+	    {
+	      struct type *symtype = SYMBOL_TYPE (sym);
+	      TYPE_NAME (SYMBOL_TYPE (sym)) = DEPRECATED_SYMBOL_NAME (sym);
+	      /* APPLE LOCAL: This is a bit of a hack.  On Mac OS X, there are two
+		 possible long double's , the 8 byte one from gcc-3.3, and the 16 byte
+		 one from gcc-4.0.  I don't have the time to extend gdb's default float
+		 format handling right now to take care of this.  So if I see a long
+		 double type that's different from the TARGET one, I fix it up here.
+		 Turns out the ieee long doubl format works for all types, so this
+		 is trivial...  */
+	      if (TYPE_CODE (symtype) == TYPE_CODE_FLT 
+		  && TYPE_NAME (symtype) != NULL
+		  && strcmp (TYPE_NAME (symtype), "long double") == 0
+		  && TYPE_LENGTH (symtype) * TARGET_CHAR_BIT != TARGET_LONG_DOUBLE_BIT)
+		TYPE_FLOATFORMAT (symtype) = gdbarch_long_double_format (current_gdbarch);
+	    }
 	}
 
       add_symbol_to_list (sym, &file_symbols);

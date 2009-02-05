@@ -15218,6 +15218,7 @@ N.A.
  -break-insert [ -t ] [ -h ] [ -r ]
     [ -c @var{condition} ] [ -i @var{ignore-count} ]
     [ -p @var{thread} ] [ @var{line} | @var{addr} ]
+    [-l [ <NUM> <NUM>...] ]
 @end smallexample
 
 @noindent
@@ -15248,6 +15249,10 @@ Initialize the @var{ignore-count}.
 Insert a regular breakpoint in all the functions whose names match the
 given regular expression.  Other flags are not applicable to regular
 expresson.
+@item -l [<NUM> <NUM>...]
+This list of indices will be used to select from the list of matches
+if there are multiple breakpoint hits.  Passing -1 will cause all
+matches to be selected.
 @end table
 
 @subsubheading Result
@@ -15256,17 +15261,35 @@ The result is in the form:
 
 @smallexample
  ^done,bkptno="@var{number}",func="@var{funcname}",
-  file="@var{filename}",line="@var{lineno}"
+  file="@var{filename}",line="@var{lineno}",shlib="@var{shlib}"
 @end smallexample
+
+or, if there are multiple breakpoints, and the -l option is not selected:
+
+@smallexample
+ ^done,matches=[b=[index="@var{index}",number="@var{number}",func="@var{funcname}",
+  file="@var{filename}",line="@var{lineno}"], b=[]...]
+@end smallexample
+
 
 @noindent
 where @var{number} is the @value{GDBN} number for this breakpoint, @var{funcname}
 is the name of the function where the breakpoint was inserted,
 @var{filename} is the name of the source file which contains this
-function, and @var{lineno} is the source line number within that file.
+function, and @var{lineno} is the source line number within that file, and @var{shlib}
+is the shared library in which the breakpoint was set.  
+
+If there are multiple matches, the second form is sent including the
+@var{index} element, and no breakpoints are set.  This will allow the
+UI to put up some kind of picker.  Then it can re-issue the command
+with the -l option, using the @var{index} values provided by the first
+result.  If you just want multiple matches to be always selected, then send a selection
+list of -1 always.
 
 Note: this format is open to change.
-@c An out-of-band breakpoint instead of part of the result?
+@c An out-of-band breakpoint instead of part of the result?  
+@c APPLE LOCAL: NO, NO, NO!!!  Among other things, this would make handling a breakpoint
+@c with multiple hits very awkward.
 
 @subsubheading @value{GDBN} Command
 

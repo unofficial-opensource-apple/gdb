@@ -792,6 +792,18 @@ allocate_objfile (bfd *abfd, int flags)
 
   objfile->cp_namespace_symtab = NULL;
 
+  /* APPLE LOCAL: Set the equivalence table bits.  
+     FIXME: There should really be some host specific function we 
+     call out to to do this.  We will need to fix this if we intend
+     to submit this code.  */
+#ifdef NM_NEXTSTEP
+  if (objfile->name != NULL && strstr (objfile->name, "libSystem") != NULL)
+    objfile->check_for_equivalence = 1;
+  else
+#endif /* NM_NEXTSTEP */
+    objfile->check_for_equivalence = 0;
+  objfile->equivalence_table = NULL;
+
   /* Add this file onto the tail of the linked list of other such files. */
 
   /* Save passed in flag bits. */
@@ -1006,6 +1018,13 @@ free_objfile (struct objfile *objfile)
       (*objfile->sf->sym_finish) (objfile);
     }
 
+
+  /* APPLE LOCAL: Remove all the obj_sections in this objfile from the
+     ordered_sections list.  Do this before deleting the bfd, since
+     we need to use the bfd_sections to do it.  */
+  
+  objfile_delete_from_ordered_sections (objfile);
+
   /* We always close the bfd. */
 
   if (objfile->obfd != NULL)
@@ -1025,10 +1044,8 @@ free_objfile (struct objfile *objfile)
 
   objfile_remove_from_restrict_list (objfile);
 
-  /* APPLE LOCAL: Remove all the obj_sections in this objfile from the
-     ordered_sections list.  */
-  
-  objfile_delete_from_ordered_sections (objfile);
+  /* APPLE LOCAL: Delete the equivalence table dingus.  */
+  equivalence_table_delete (objfile);
 
   /* If we are going to free the runtime common objfile, mark it
      as unallocated.  */
@@ -1061,6 +1078,9 @@ free_objfile (struct objfile *objfile)
   /* Free the obstacks for non-reusable objfiles */
   bcache_xfree (objfile->psymbol_cache);
   bcache_xfree (objfile->macro_cache);
+  /* APPLE LOCAL: Also free up the table of "equivalent symbols".  */
+  equivalence_table_delete (objfile);
+  /* END APPLE LOCAL */
   if (objfile->demangled_names_hash)
     htab_delete (objfile->demangled_names_hash);
   obstack_free (&objfile->objfile_obstack, 0);
@@ -1374,6 +1394,9 @@ objfile_purge_solibs (void)
     /* We assume that the solib package has been purged already, or will
        be soon.
      */
+/* NB: I don't think NM_MACOSX is ever defined with our current configury
+       set-up -- my guess is that this is effectively permanently #if 0'ed 
+       on our platform.  jsm/2004-12-08 */
 #ifdef NM_MACOSX
     /* not now --- the dyld code handles this better; and this will really make it upset */
     if (!(objf->flags & OBJF_USERLOADED) && (objf->flags & OBJF_SHARED))
@@ -1862,6 +1885,10 @@ objfile_get_next (struct objfile *in_objfile)
    into the architecture vector.  At that point,
    dyld_objfile_set_load_state should go there.  */
 
+#ifdef NM_NEXTSTEP
+#include "macosx-nat-dyld.h"
+#endif
+
 int
 objfile_set_load_state (struct objfile *o, int load_state)
 {
@@ -1874,8 +1901,6 @@ objfile_set_load_state (struct objfile *o, int load_state)
     return 1;
 
 #ifdef NM_NEXTSTEP
-  extern int dyld_objfile_set_load_state (struct objfile *, int);
-
   return dyld_objfile_set_load_state (o, load_state);
 #else
   return 1;

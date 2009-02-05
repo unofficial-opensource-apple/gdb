@@ -1986,6 +1986,11 @@ i386_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   tdep = XMALLOC (struct gdbarch_tdep);
   gdbarch = gdbarch_alloc (&info, tdep);
 
+  /* APPLE LOCAL: This cpu family is only 32 bit, but we use wordsize to 
+     distinguish between ppc32 and ppc64 -- so to allow for generic code,
+     we have wordsize over here, too.  */
+  tdep->wordsize = 4;
+
   /* General-purpose registers.  */
   tdep->gregset = NULL;
   tdep->gregset_reg_offset = NULL;

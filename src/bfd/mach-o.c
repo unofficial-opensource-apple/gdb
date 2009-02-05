@@ -384,7 +384,6 @@ bfd_mach_o_convert_architecture (mtype, msubtype, type, subtype)
       *type = bfd_arch_powerpc;
       *subtype = bfd_mach_ppc; 
       break;
-    case (BFD_MACH_O_CPU_TYPE_POWERPC | 0x1000000):
     case BFD_MACH_O_CPU_TYPE_POWERPC_64:
       *type = bfd_arch_powerpc;
       *subtype = bfd_mach_ppc64; 
@@ -1425,6 +1424,7 @@ bfd_mach_o_scan_read_dysymtab (abfd, command)
   char *sname;
   struct bfd_section *stabs_pseudo_section;
   asection *bfdsec;
+  int nlist_size;
 
   BFD_ASSERT (command->type == BFD_MACH_O_LC_DYSYMTAB);
 
@@ -1478,6 +1478,9 @@ bfd_mach_o_scan_read_dysymtab (abfd, command)
       seg->nlocalsym + seg->nextdefsym != seg->iundefsym)
     return 0;
 
+  /* nlist's are different sizes for 32 bit & 64 bit PPC...  */
+
+  nlist_size =   (bfd_mach_o_version (abfd) > 1) ? 16 : 12;
   /* Now create the fake sections.  */
 
   stabs_pseudo_section = bfd_get_section_by_name (abfd, "LC_SYMTAB.stabs");
@@ -1497,8 +1500,8 @@ bfd_mach_o_scan_read_dysymtab (abfd, command)
 
   bfdsec->vma = 0;
   bfdsec->lma = 0;
-  bfdsec->_raw_size = seg->nlocalsym * 12;
-  bfdsec->filepos = stabs_pseudo_section->filepos + (seg->ilocalsym * 12);
+  bfdsec->_raw_size = seg->nlocalsym * nlist_size;
+  bfdsec->filepos = stabs_pseudo_section->filepos + (seg->ilocalsym * nlist_size);
   bfdsec->alignment_power = 0;
   bfdsec->flags = SEC_HAS_CONTENTS;
 
@@ -1515,8 +1518,8 @@ bfd_mach_o_scan_read_dysymtab (abfd, command)
 
   bfdsec->vma = 0;
   bfdsec->lma = 0;
-  bfdsec->_raw_size = (seg->nextdefsym * 12) + (seg->nundefsym * 12);
-  bfdsec->filepos =  stabs_pseudo_section->filepos + (seg->iextdefsym * 12);
+  bfdsec->_raw_size = (seg->nextdefsym * nlist_size) + (seg->nundefsym * nlist_size);
+  bfdsec->filepos =  stabs_pseudo_section->filepos + (seg->iextdefsym * nlist_size);
   bfdsec->alignment_power = 0;
   bfdsec->flags = SEC_HAS_CONTENTS;
 
@@ -1533,6 +1536,7 @@ bfd_mach_o_scan_read_symtab (abfd, command)
   asection *bfdsec;
   char *sname;
   const char *prefix = "LC_SYMTAB.stabs";
+  int nlist_size = (bfd_mach_o_version (abfd) > 1) ? 16 : 12;
 
   BFD_ASSERT (command->type == BFD_MACH_O_LC_SYMTAB);
 
@@ -1558,7 +1562,7 @@ bfd_mach_o_scan_read_symtab (abfd, command)
 
   bfdsec->vma = 0;
   bfdsec->lma = 0;
-  bfdsec->_raw_size = seg->nsyms * 12;
+  bfdsec->_raw_size = seg->nsyms * nlist_size;
   bfdsec->filepos = seg->symoff;
   bfdsec->alignment_power = 0;
   bfdsec->flags = SEC_HAS_CONTENTS;
@@ -1975,6 +1979,19 @@ bfd_mach_o_scan_start_address (abfd)
 
 	  abfd->start_address = bfd_h_get_32 (abfd, buf);
 	}
+      else if ((mdata->header.cputype == BFD_MACH_O_CPU_TYPE_POWERPC_64)
+               && (cmd->flavours[i].flavour == BFD_MACH_O_PPC_THREAD_STATE_64))
+        {
+          unsigned char buf[8];
+
+          bfd_seek (abfd, cmd->flavours[i].offset + 0, SEEK_SET);
+
+          if (bfd_bread (buf, 8, abfd) != 8)
+            return -1;
+
+          abfd->start_address = bfd_h_get_64 (abfd, buf);
+        }
+
     }
 
   return 0;
@@ -2199,6 +2216,10 @@ typedef struct mach_o_fat_data_struct
   unsigned long nfat_arch;
   mach_o_fat_archentry *archentries;
 } mach_o_fat_data_struct;
+
+/* This function (and the way it is called) are for "archives", which
+   might lead you to think of ranlib style .a files, but this is really
+   to detect whether the bfd is a (MachO) fat file or not. */
 
 const bfd_target *
 bfd_mach_o_archive_p (abfd)
@@ -2522,6 +2543,9 @@ bfd_mach_o_core_fetch_environment (abfd, rbuf, rlen)
 	    }
 	}
     }
+  /* If we get here, it means we didn't find
+     the segment befor the stack */
+  return -1;
 }
 
 char *

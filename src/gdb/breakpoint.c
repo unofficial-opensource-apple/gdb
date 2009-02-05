@@ -22,6 +22,8 @@
    Boston, MA 02111-1307, USA.  */
 
 #include "defs.h"
+/* APPLE LOCAL: we use strftime.  */
+#include <time.h>
 #include <ctype.h>
 #include "symtab.h"
 #include "frame.h"
@@ -47,10 +49,14 @@
 #include "gdb.h"
 #include "ui-out.h"
 #include "cli/cli-script.h"
+/* APPLE LOCAL: we use cli_out_new.  */
+#include "cli-out.h"
 #include "gdb_assert.h"
 #include "block.h"
 #include "wrapper.h"
 #include "gdb-events.h"
+/* APPLE LOCAL: we use tilde_expand from readline.  */
+#include "readline/tilde.h"
 
 /* Prototypes for local functions. */
 
@@ -109,7 +115,7 @@ static int break_command_1 (char *, int, int, struct breakpoint *);
 /* APPLE LOCAL: We want to call most of break_command_1 from gdb_breakpoints so we
    don't have lots of duplicated code.  That's what break_command_2 gives us.  */
 static int break_command_2 (char *, int, int, struct breakpoint *,
-			    char *, struct breakpoint_list **);
+			    char *, int *, struct breakpoint_list **);
 
 /* APPLE LOCAL: Pass the requested_shlib into create_breakpoints.  Also take an
    optional breakpoint_list, and record the new breakpoints in it.  This allows
@@ -259,6 +265,16 @@ static int exception_catchpoint_throw_enabled;
 
 /* APPLE LOCAL - for future-break & -break-insert -f.  */
 static void restore_saved_pending_break_support (void * val);
+
+/* APPLE LOCAL: Can't let breakpoint_sals_to_pc error when resolving
+   pending breakpoints, since that might happen when we are also 
+   handling the shared library event.  In any case, it's stupid
+   to let one unresolvable breakpoint scotch setting all the rest.  */
+
+static void breakpoint_sals_to_pc (struct symtabs_and_lines *sals, char *address);
+/* APPLE LOCAL:  */
+static int safe_breakpoint_sals_to_pc (struct symtabs_and_lines *sals, 
+				       char *address);
 
 /* APPLE LOCAL: These two track the relative ages of symbols &
    breakpoints.  Increment the symbol generation if you add new
@@ -915,6 +931,20 @@ insert_bp_location (struct bp_location *bpt,
      breakpoints should not be inserted.  */
   if (!breakpoint_enabled (bpt->owner))
     return 0;
+
+  /* APPLE LOCAL: If the objfile is known, but not really resident
+     (e.g. we picked it up from a load command, or the inferior has
+      been mourned and is no longer in memory), don't try to insert
+     a breakpoint.  
+     FIXME: Obviously the bp_objfile should be in the bp_location, not
+     the breakpoint but it's hardly the only mistake in the separation
+     of these two structures.  */
+
+  if (!target_check_is_objfile_loaded (bpt->owner->bp_objfile))
+    {
+      bpt->inserted = 0;
+      return 0;
+    }
 
   if (bpt->inserted || bpt->duplicate)
     return 0;
@@ -1910,7 +1940,6 @@ int
 software_breakpoint_inserted_here_p (CORE_ADDR pc)
 {
   struct bp_location *bpt;
-  int any_breakpoint_here = 0;
 
   ALL_BP_LOCATIONS (bpt)
     {
@@ -2260,7 +2289,8 @@ top:
     }
 
   bs_copy = bpstat_copy (*bsp);
-  bpstat_cleanup_chain = make_cleanup (bpstat_clear, &bs_copy);
+  bpstat_cleanup_chain = make_cleanup ((void (*) (void *)) bpstat_clear, 
+				       &bs_copy);
   bpstat_clear_actions (*bsp);
   /* END APPLE LOCAL */
 
@@ -2797,7 +2827,6 @@ bpstat_alloc (struct breakpoint *b, bpstat cbs /* Current "bs" value */ )
 static int
 watchpoint_equal (struct value *arg1, struct value *arg2)
 {
-  register int len;
   register char *p1, *p2;
 
   if ((TYPE_CODE (VALUE_TYPE (arg1)) == TYPE_CODE_ARRAY)
@@ -3925,6 +3954,16 @@ print_one_breakpoint (struct breakpoint *b,
       ui_out_field_int (uiout, "thread", b->thread);
     }
   
+  /* APPLE LOCAL: Output the shared library this breakpoint was
+     set in.  */
+  if (ui_out_is_mi_like_p (uiout) && b->bp_objfile != NULL)
+    {
+      if (b->bp_objfile->name != NULL)
+	ui_out_field_string (uiout, "shlib", b->bp_objfile->name);
+      else
+	ui_out_field_skip (uiout, "shlib");
+    }
+  /* END APPLE LOCAL */
   ui_out_text (uiout, "\n");
   
   if (frame_id_p (b->frame_id))
@@ -4763,7 +4802,7 @@ resolve_pending_breakpoint (struct breakpoint *b)
   set_language (b->language);
   input_radix = b->input_radix;
   rc = break_command_2 (b->addr_string, b->flag, b->from_tty, b,
-			b->requested_shlib, NULL);
+			b->requested_shlib, NULL, NULL);
   
   if (rc == GDB_RC_OK)
     /* Pending breakpoint has been resolved.  */
@@ -4849,7 +4888,7 @@ re_enable_breakpoints_in_shlibs (int silent)
   {
     if (b->enable_state == bp_shlib_disabled)
       {
-	char buf[1], *lib;
+	char buf[1] /* APPLE LOCAL - we don't use lib. , *lib */;
 	
 	/* Do not reenable the breakpoint if the shared library
 	   is still not mapped in.  */
@@ -5367,8 +5406,9 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 	  describe_other_breakpoints (sal.pc, sal.section);
 	
 	b = set_raw_breakpoint (sal, type);
-	/* If we only made one breakpoint from a pending breakpoint,
-	   don't change its number.  That's just annoying.  */
+	/* APPLE LOCAL: If we only made one breakpoint from a pending
+	   breakpoint, don't change its number.  That's just
+	   annoying.  */
 	if (sals.nelts == 1 && pending_bp != NULL)
 	  b->number = pending_bp->number;
 	else
@@ -5595,6 +5635,45 @@ breakpoint_sals_to_pc (struct symtabs_and_lines *sals,
     }
 }
 
+/* APPLE LOCAL: introducing a safe_breakpoint_sals_to_pc */
+
+struct safe_sals_to_pc_args
+{
+  struct symtabs_and_lines *sals;
+  char *address;
+};
+
+static int 
+wrap_breakpoint_sals_to_pc (char *a)
+{
+  struct safe_sals_to_pc_args *args = (struct safe_sals_to_pc_args *) a;
+
+  breakpoint_sals_to_pc (args->sals, args->address);
+
+  return 1;
+  
+}
+
+static int
+safe_breakpoint_sals_to_pc (struct symtabs_and_lines *sals, char *address)
+{
+  struct safe_sals_to_pc_args args;
+
+  args.sals = sals;
+  args.address = address;
+
+  if (!catch_errors ((catch_errors_ftype *) wrap_breakpoint_sals_to_pc, &args,
+		     "", RETURN_MASK_ALL))
+    {
+      /* An error occurred */
+      return 0;
+    }
+
+  return 1;
+}
+
+/* END APPLE LOCAL */
+
 static int
 do_captured_parse_breakpoint (struct ui_out *ui, void *data)
 {
@@ -5682,13 +5761,27 @@ break_command_1 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
       else
 	requested_shlib = NULL;
     }
-  return break_command_2 (arg, flag, from_tty, pending_bp, requested_shlib, NULL);
+  return break_command_2 (arg, flag, from_tty, pending_bp, requested_shlib, NULL, NULL);
 
 }
 
+/* Helper function for break_command_1 and gdb_breakpoint.  This
+   arguments have the same meaning as break_command_1.  In addition,
+   it takes two optional arguments.  
+
+   If INDICES is non-null, then the elements of the array will be used
+   to pick the breakpoint hits if there are multiple hits.  The list
+   indices is terminated by an element with value -1, but if the first
+   element of the list is -1, then ALL matches will be picked.
+
+   If NEW_BREAKPOINTS is non-null, then it will be filled with a 
+   list of the newly created breakpoints.  */
+
 static int
-break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_bp, 
-		 char *requested_shlib, struct breakpoint_list **new_breakpoints)
+break_command_2 (char *arg, int flag, int from_tty, 
+		 struct breakpoint *pending_bp, 
+		 char *requested_shlib, int *indices, 
+		 struct breakpoint_list **new_breakpoints)
 {
   int tempflag, hardwareflag;
   struct symtabs_and_lines sals;
@@ -5731,53 +5824,100 @@ break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
      user for their choice, and reset the breakpoints based on the canonical
      form returned. */
   
-  if (rc == GDB_RC_OK && ui_out_is_mi_like_p (uiout) && sals.nelts > 1)
+  if (rc == GDB_RC_OK && sals.nelts > 1)
     {
-      struct cleanup *old_chain, *list_cleanup;
-      
-      /* Always have a addr_string array, even if it is empty. */
-      old_chain = make_cleanup (xfree, addr_string);
-      
-      /* Make sure that all storage allocated to SALS gets freed.  */
-      make_cleanup (xfree, sals.sals);
-      
-      breakpoint_sals_to_pc (&sals, addr_start);
-      
-      make_cleanup_ui_out_list_begin_end (uiout, "matches");
-      
-      for (i = 0; i < sals.nelts; i++)
+      /* If we got an indices list, it's because we reported the
+	 list to the UI, which made a choice, and came back to us
+	 with the pick of choices.  We can't really do much to make 
+	 sure the index pick matches what we sent before, we just
+	 have to assume the UI did the right thing.  */
+      if (indices != NULL)
 	{
-	  struct symtab_and_line sal = sals.sals[i];
-	  list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "b");
-	  
-	  /* Output an index so that the MI client can come back and
-             make choices without having to ask by name (which might
-             end up being circular.  Increment by two so we can pass
-             the results back to select_symbol_args...  */
-	  
-	  ui_out_field_int (uiout, "index", i+2);
-	  
-	  if (addr_string[i] != NULL)
-	    ui_out_field_string (uiout, "canonical", addr_string[i]);
-	  else
-	    ui_out_field_skip (uiout, "canonical");
-	  
-	  if (sal.symtab && sal.symtab->filename)
-	    ui_out_field_string (uiout, "file", sal.symtab->filename);
-	  
-	  if (sal.symtab && sal.symtab->objfile && sal.symtab->objfile->name)
-	    ui_out_field_string (uiout, "binary", sal.symtab->objfile->name);
-	  else if (sal.section && sal.section->owner && sal.section->owner->filename)
-	    ui_out_field_string (uiout, "binary", sal.section->owner->filename);
-	  
-	  ui_out_field_int (uiout, "line", sal.line);
-	  ui_out_field_core_addr (uiout, "addr", sal.pc);
-	  
-	  
-	  do_cleanups (list_cleanup);
+	  if (indices[0] != -1)
+	    {
+	      int nsals;
+	      int i;
+	      struct symtab_and_line *new_sals;
+	      for (nsals = 0; indices[nsals] != -1; nsals++) { ; }
+	      
+	      new_sals = (struct symtab_and_line *) 
+		xmalloc (nsals * sizeof (struct symtab_and_line));
+	      
+	      for (i = 0; i < nsals; i++)
+		{
+		  if (0 <= indices[i] && indices[i] < sals.nelts)
+		    new_sals[i] = sals.sals[indices[i]];
+		  else
+		    {
+		      xfree (new_sals);
+		      error ("Index %d out of range: %d", i, indices[i]);
+		    }
+		}
+	      
+	      xfree (sals.sals);
+	      sals.nelts = nsals;
+	      sals.sals = new_sals;
+	    }
 	}
-      do_cleanups (old_chain);
-      return GDB_RC_NONE;
+      else if (ui_out_is_mi_like_p (uiout))
+	{
+	  struct cleanup *old_chain, *list_cleanup;
+	  int retval;
+
+	  /* Always have a addr_string array, even if it is empty. */
+	  old_chain = make_cleanup (xfree, addr_string);
+	  
+	  /* Make sure that all storage allocated to SALS gets freed.  */
+	  make_cleanup (xfree, sals.sals);
+	  
+	  /* APPLE LOCAL: Have to use safe_breakpoint_sals_to_pc here,
+	     because this could get called to resolve a pending
+	     breakpoint and we don't want a failure in one pending
+	     breakpoint to scotch setting all the others, or worse
+	     to cause us not to finish handling a shared library event. */
+	  retval = safe_breakpoint_sals_to_pc (&sals, addr_start);
+	  if (!retval)
+	    {
+	      do_cleanups (old_chain);
+	      return GDB_RC_FAIL;
+	    }
+	  /* END APPLE LOCAL */
+	  make_cleanup_ui_out_list_begin_end (uiout, "matches");
+	  
+	  for (i = 0; i < sals.nelts; i++)
+	    {
+	      struct symtab_and_line sal = sals.sals[i];
+	      list_cleanup = make_cleanup_ui_out_list_begin_end (uiout, "b");
+	      
+	      /* Output an index so that the MI client can come back and
+		 make choices without having to ask by name (which might
+		 end up being circular.  Increment by two so we can pass
+		 the results back to select_symbol_args...  */
+	      
+	      ui_out_field_int (uiout, "index", i);
+	      
+	      if (addr_string[i] != NULL)
+		ui_out_field_string (uiout, "canonical", addr_string[i]);
+	      else
+		ui_out_field_skip (uiout, "canonical");
+	      
+	      if (sal.symtab && sal.symtab->filename)
+		ui_out_field_string (uiout, "file", sal.symtab->filename);
+	      
+	      if (sal.symtab && sal.symtab->objfile && sal.symtab->objfile->name)
+		ui_out_field_string (uiout, "binary", sal.symtab->objfile->name);
+	      else if (sal.section && sal.section->owner && sal.section->owner->filename)
+		ui_out_field_string (uiout, "binary", sal.section->owner->filename);
+	      
+	      ui_out_field_int (uiout, "line", sal.line);
+	      ui_out_field_core_addr (uiout, "addr", sal.pc);
+	      
+	      
+	      do_cleanups (list_cleanup);
+	    }
+	  do_cleanups (old_chain);
+	  return GDB_RC_NONE;
+	}
     }
 
   /* If caller is interested in rc value from parse, set value.  */
@@ -5865,7 +6005,18 @@ break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
   /* Resolve all line numbers to PC's and verify that the addresses
      are ok for the target.  */
   if (!pending)
-    breakpoint_sals_to_pc (&sals, addr_start);
+    {
+      int retval;
+      /* APPLE LOCAL: See comment in previous use of
+	 safe_breakpoint_sals_to_pc above. */
+      retval = safe_breakpoint_sals_to_pc (&sals, addr_start);
+      if (!retval)
+	{
+	  do_cleanups (old_chain);
+	  return GDB_RC_FAIL;
+	}
+      /* END APPLE LOCAL */
+    }
 
   /* Verify that condition can be parsed, before setting any
      breakpoints.  Allocate a separate condition expression for each
@@ -5956,7 +6107,9 @@ break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
       mention (b);
     }
   
-  if (sals.nelts > 1)
+  /* APPLE LOCAL: don't output this warning if the mi is setting
+     the breakpoints.  That will just confuse the user.  */
+  if (sals.nelts > 1 && !ui_out_is_mi_like_p (uiout))
     {
       warning ("Multiple breakpoints were set.");
       warning ("Use the \"delete\" command to delete unwanted breakpoints.");
@@ -5973,7 +6126,7 @@ break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
 enum gdb_rc
 gdb_breakpoint (char *address, char *condition,
 		int hardwareflag, int tempflag, int futureflag,
-		int thread, int ignore_count, char *requested_shlib)
+		int thread, int ignore_count, int *indices, char *requested_shlib)
 {
   struct cleanup *wipe;
   int retval = GDB_RC_OK;
@@ -5997,10 +6150,10 @@ gdb_breakpoint (char *address, char *condition,
   if (tempflag)
     flag |= BP_TEMPFLAG;
   
-  break_command_2 (address, flag, 0, NULL, requested_shlib, &new_breakpoints);
+  break_command_2 (address, flag, 0, NULL, requested_shlib, indices, &new_breakpoints);
   
   /* Now that we have set the breakpoints, record the condition & ignore_counts.  */
-  for (new_bp = new_breakpoints; new_bp != NULL; new_bp = new_breakpoints->next)
+  for (new_bp = new_breakpoints; new_bp != NULL; new_bp = new_bp->next)
     {
       new_bp->bp->ignore_count = ignore_count;
       if (condition != NULL)
@@ -8034,7 +8187,8 @@ breakpoint_re_set_one (void *bint)
 	    {
 	      struct obj_section *osect;
 	      osect = find_pc_sect_section (sals.sals[i].pc, sals.sals[i].section);
-	      b->bp_objfile = osect->objfile;
+              if (osect != NULL)
+		b->bp_objfile = osect->objfile;
 	    }
 	  /* Mark the breakpoint as set so we don't try to reset it.  */
 	  b->bp_set_p = 1;    /* Note that it has been successfully set */

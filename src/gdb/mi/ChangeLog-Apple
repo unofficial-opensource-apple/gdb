@@ -1,3 +1,8 @@
+2004-10-28  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c (mi_cmd_break_insert): Added the "-l"
+	option, and process it.
+	
 2004-10-08  Jim Ingham  <jingham@apple.com>
 
 	* mi-cmds-file.c (print_syms_for_block): New consts argument.

@@ -1,3 +1,9 @@
+2005-01-06  Jim Ingham  <jingham@apple.com>
+
+	* MacsBug_display.c: Read all the registers into unsigned long
+	long's (since we now treat ALL the PPC registers as unsigned
+	long long, and then only print out the lower 32 bits for now.
+	
 2003-10-20  Ira Ruben  <iraruben@acm.org>
 
 	* Makefile: Add OPT to control -O level from command line.

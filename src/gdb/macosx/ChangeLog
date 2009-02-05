@@ -1,3 +1,271 @@
+2005-01-12  Jason Molenda  (jmolenda@apple.com)
+
+	Merging approved patch from TOT.
+
+	* macosx-nat-dyld-info.c (dyld_entry_shlib_num): Fix off by one
+	error, use DYLD_ALL_OBJFILE_INFO_ENTRIES iterator macro.
+
+2005-01-12  Jim Ingham  <jingham@apple.com>
+
+        Merging approved bugs from TOT.
+	
+        * macosx-nat-dyld.c (dyld_set_load_state_command): Call
+        re_enable_breakpoints_in_shlibs to set any breakpoints that might
+        take with the new debug info.
+        (dyld_set_objfile_load_state): Ditto.
+	
+        * macosx-tdep.c (BFD_GET32, BFD_GETL32, BFD_GET64, BFD_GETL64): Use
+        new-fangled casts to make the size explicit.
+
+        * macosx-tdep.c (BFD_GETB64, BFD_GETL64): Don't cast this result
+        back to an unsigned long.
+
+2004-12-22  Jim Ingham <jingham@apple.com>
+
+	* macosx-nat-inferior.c: The macosx child target
+	uses dyld_is_objfile_loaded for its to_check_is_objfile_loaded
+	method.
+	
+2004-12-09  Jason Molenda  (jmolenda@apple.com)
+
+	* All files: Expand tabs, remote ws at end of lines.
+
+2004-12-08  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.h: Provide struct decl for prototype.
+
+2004-12-08  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.h: Prototype for dyld_objfile_set_load_state.
+	* macosx-nat-infthread.h: Prototype for 
+	macosx_setup_registers_before_hand_call.
+
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-tdep.h: Define INVALID_ADDRESS for 
+	dyld_is_objfile_loaded() in macosx-nat-dyld-process.c.
+
+2004-12-03  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-process.c (dyld_is_objfile_loaded): A function that
+	higher levels of gdb can call to see if a given struct objfile is
+	actually resident in memory or not (e.g. before/after executing when
+        none of the objfiles are really present.)
+	* macosx-nat-dyld-process.h: Prototype for above.
+
+	* macosx-nat-dyld.c (macosx_dyld_mourn_inferior): A function called
+	when the inferior has gone away; make a pass through the 
+        dyld_objfile_entries and mark them as not-resident.
+	* macosx-nat-dyld.h: Prototype for above.
+
+	* macosx-nat-inferior.c (macosx_mourn_inferior): Call 
+	macosx_dyld_mourn_inferior in our period of mourning.
+	A little reformatting and such.
+
+	* macosx-nat-dyld-info.h: Comment fix.
+
+2004-12-03  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-path.c (get_framework_pathname): Apply patch from 
+	Eric Albert <ejalbert@apple.com> to recognize .bundle's correctly.
+	Minor reworking of the functions variables/etc by me.
+
+2004-12-02  Jason Molenda  (jmolenda@apple.com)
+
+	Remove dyld_index from the dyld_objfile_entry.  I don't think it does
+	anything except point at the mach_header of an image which dyld_addr
+	already does.  So out it goes.
+
+	* macosx-nat-cfm.c (cfm_update): Don't initialize dyld_index.
+	* macosx-nat-dyld-info.c (dyld_objfile_entry_clear): Ditto.
+	(dyld_objfile_entry_compare): Don't use dyld_index in comparisons.
+	(dyld_offset_string): Add comment.
+	* macosx-nat-dyld-info.h: Remove dyld_index.  Add a few comments as
+	I'm going along.
+	* macosx-nat-dyld-process.c (dyld_info_process_raw): Don't set 
+	dyld_index.
+	(dyld_info_read): Don't initialize dyld_index.
+
+2004-11-29  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-frameinfo.c (ppc_parse_instructions): Fix a typo in
+	the stdu if branch.  And add to the terminal "scan-ahead" section
+	a bit looking for setting up the stack frame.  Since we are now
+	relying on unwinding r30 to get the frame, getting this bit of
+	info is more important.
+	* ppc-macosx-tdep.c (ppc_frame_find_prev_fp): Do some sanity checking
+	on the frame pointer you have just unwound, and it if seems bad, fall
+	back on the stack pointer.
+	
+2004-11-30  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (dyld_info_process_raw): Change ppc64 file handling
+	to work better.
+	* macosx-nat-dyld-info.c (dyld_entry_string, dyld_entry_info,
+	dyld_entry_shlib_num): Pedantic cleanups - whitespace, unsigneds,
+	maybe a comment or two.  The usual.
+
+2004-11-29  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c (macosx_dyld_init): Make macosx_locate_dyld call
+	a little clearer.  Always look up the dyld info even if it's in
+	the same location as the past - maybe not necessary, but I don't
+	trust this optimization without knowing more about what's going on.
+	(macosx_solib_add): If we're called without a running inferior
+	(i.e. we can't find dyld), don't try to read the non-existant dyld's
+	data structures.
+	(dyld_info_read_raw_data): Short-circuit a do-nothing call to this
+	func.
+
+2004-11-29  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_sigtramp_frame_cache): Offset the registers
+	after CR in the save area, that is always stored in an 4 byte int 
+	regardless of the size of the GPR's.  
+	(ppc_sigtramp_frame_prev_register): Also distinguish 32 bit and
+	64 bit signal context areas here.
+	* ppc-macosx-frameinfo.c: Add sigtramp_gp_save_size to pass info
+	about what the save size is.
+	
+2004-11-23  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.c: Switch over to the new dyld interface for
+	receiving notifications about image files loaded in the inferior
+	process.  Run the file through gdb_indent.  There remains work to
+	do, but the basics are in place.
+	* macosx-nat-dyld.h: Same.
+
+	* macosx-nat-dyld-info.c: Add comments.  Beginnings of my pogrom
+	against the fear of signed types for counting small quantities which
+	pervades this entire subdirectory.  Remove tabs.
+	* macosx-nat-dyld-info.h: Same.
+	* macosx-nat-dyld-path.c (strsave): Wow, a macro alias for xstrdup
+	in one file.  Gone.  Small formatting cleanups.
+	* macosx-nat-dyld-process.c: Add comments.  Removed unsigneds.  Fix
+	a couple small mistakes gdb_indent made.
+	* macosx-nat-dyld-process.h: Same.
+
+2004-11-23  Jim Ingham  <jingham@apple.com>
+
+	* ppc-macosx-frameinfo.c: (ppc_parse_instructions): Catch the
+	case where std is used to save the link register.
+	Also recognize std for saving the GPR's.
+	And recognize stdu for updating the stack pointer.
+	(ppc_frame_function_properties): When overriding the prologue
+	parser for frames up on the stack, set the lr store offset
+	to a value appropriate to the architecture.
+	* ppc-macosx-tdep.c (ppc_frame_prev_register): When reading the 
+	frame pointer, take architecture into account.
+
+2004-11-22  Eric Albert <ejalbert@apple.com>
+
+	* ppc-macosx-tdep.c (ppc_mach_o_osabi_sniffer): Sniff the
+	correct side of fat files.
+	* i386-macosx-tdep.c (i386_mach_o_osabi_sniffer): Ditto, and
+	register the sniffer for unknown architectures.
+	
+2004-11-18  Jim Ingham <jingham@apple.com>
+
+	* macosx-nat-inferior.c (macosx_handle_exception): Cast
+	exception_data to an unsigned int first, THEN to a CORE_ADDR.
+	This keeps it from getting sign extended.
+	
+2004-11-16  Jason Molenda  (jmolenda@apple.com)
+
+	Revert change from 2004-11-10; it doesn't work for host cross host
+	configs.  Reimplement.
+
+	* i386-macosx-tdep.c (osabi_seen_in_attached_dyld): New global, unused.
+	* ppc-macosx-tdep.c (osabi_seen_in_attached_dyld): New global.
+	(ppc_mach_o_osabi_sniffer): Use value in osabi_seen_in_attached_dyld
+	if it has been set.
+	* macosx-nat-dyld.c (macosx_dyld_init): Initialize 
+	osabi_seen_in_attached_dyld if we find a ppc/ppc64 dyld in memory
+	when attaching.
+
+	* cached-symfile.c i386-macosx-tdep.c kdp-protocol.c
+	macosx-metrowerks.c macosx-nat-cfm-io.c macosx-nat-cfm.c
+	macosx-nat-cmds-load.c macosx-nat-dyld-info.c macosx-nat-dyld-io.c
+	macosx-nat-dyld-process.c macosx-nat-excthread.c
+	macosx-nat-inferior-debug.c macosx-nat-mutils.c macosx-tdep.c
+	ppc-macosx-frameinfo.c ppc-macosx-tdep.c remote-kdp.c:
+	Change from printing addresses with 0x%lx to 0x%s and paddr_nz.
+	Fix up most of the gcc warnings while I was at it.
+
+	* i386-macosx-tdep.h macosx-nat-dyld-info.h
+	macosx-nat-dyld-process.h macosx-nat-inferior-debug.h
+	macosx-nat-inferior-util.h macosx-nat-inferior.h
+	macosx-nat-infthread.h macosx-nat-mutils.h macosx-tdep.h
+	ppc-macosx-frameinfo.h ppc-macosx-tdep.h:
+	Drop PARAMS().
+
+2004-11-12  Jason Molenda  (jmolenda@apple.com)
+
+	* All files: Run them though ../gdb_indent.sh and be done
+	with it.
+
+2004-11-12  Jim Ingham  <jingham@apple.com>
+
+	* macosx-nat-infthread.c (modify_trace_bit): Always use the
+	GDB_PPC_THREAD_STATE_64 calls to get the thread state.
+	* ppc-maocsx-nat-exec.c (fetch_inferior_registers): Ditto.
+	(store_inferior_registers): Ditto.
+	* ppc-macosx-frameinfo.c (ppc_frame_saved_regs): Use the 
+	word size rather than the register size (word size is 4 on
+	32 bit apps, but register size is 8).
+	* ppc-macosx-regs.c: (supply_unsigned_int): Zero out buf.
+	(ppc_macosx_fetch_gp_registers_64): Have to supply the mq
+	register so it gets marked valid.
+	* ppc-macosx-tdep.c (ppc_unwind_dummy_id): Use register size,
+	not addr bit.
+	* (ppc_register_virtual_type): Since we always tread the registers
+	as 8 byte, call them long_long.
+	* (ppc_frame_prev_register): wordsize is what gets stored on 
+	the stack, not register size.
+	* (ppc_macosx_convert_register_p): New function.
+	* (ppc_macosx_value_to_register): New function.
+	* (ppc_macosx_register_to_value): New function.
+	* (ppc_macosx_init_abi): register the new functions with the
+	32 bit ABI.
+	
+2004-11-11  Jason Molenda  (jmolenda@apple.com)
+
+	* i386-macosx-nat-exec.c, i386-macosx-nat-float.c, i386-macosx-tdep.c,
+	kdp-protocol.c, kdp-transactions.c, kdp-udp.c, machoread.c,
+	macosx-metrowerks.c, macosx-nat-cfm.c, macosx-nat-cfmthread.c,
+	macosx-nat-cmds-load.c, pefread.c, remote-kdp.c, smread.c:
+	St-st-st-st-standards.
+
+2004-11-11  Jason Molenda  (jmolenda@apple.com)
+
+	* ppc-macosx-tdep.c: Stds r tasty.
+
+2004-11-10  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld.h: Add cpu type/subtype fields to 
+	macosx_dyld_thread_status.
+	* macosx-nat-dyld.c (dyld_starts_here_p): In addition to PPC32 magic 
+	number, look for other variants that may occur.
+	(macosx_dyld_init): Set the cputype and cpusubtype when we're attaching.
+	(macosx_dyld_thread_init): Zero out cpu type/subtype.
+	Oh, and standards are tasty.
+	* ppc-macosx-tdep.c (ppc_mach_o_osabi_sniffer): Call 
+	ppc_mach_o_osabi_sniffer_use_dyld_hint() to see if we've already found 
+	the OSABI we're using by looking at an in-memory dyld (i.e. in the 
+	case of an attach).
+	(ppc_mach_o_osabi_sniffer_use_dyld_hint): New function.
+	* macosx-nat-dyld-process.c: Standards are tasty.
+
+2004-11-05  Jason Molenda  (jmolenda@apple.com)
+
+	* macosx-nat-dyld-info.c, macosx-nat-dyld-process.c, macosx-nat-dyld.c,
+	macosx-nat-excthread.c, macosx-nat-inferior.c: Standards are tasty.
+
+2004-10-28  Jim Ingham  <jingham@apple.com>
+
+	* cached-symfile.c (allocate_objfile): Set check_for_equivalence
+	flag in the libSystem objfile.
+	
 2004-10-10  Klee Dienes  <kdienes@apple.com>
 
 	* machoread.c: Move mmap_strtabflag from dbxread.c.

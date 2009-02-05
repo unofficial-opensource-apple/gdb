@@ -148,7 +148,7 @@ mi_gdb_test {53-file-list-globals -file file-statics.c -shlib file-statics --no-
     {-file-list-globals: supply file and shlib, no values}
 
 mi_gdb_test {54-file-list-globals -file file-statics.c -shlib file-statics --simple-values} \
-    {54\^done,globals=\[\{name="const_int",type="const int",value="5"\},\{name="const_char",type="const char \*",value="0x2fdc \\"I am a constant\\""\},\{name="const_doesnt_match",type="const int",value="6"\},\{name="global_int",type="int",value="6"\}\]} \
+    {54\^done,globals=\[\{name="const_int",type="const int",value="5"\},\{name="const_char",type="const char \*",value="0x([0-9a-f]+) \\"I am a constant\\""\},\{name="const_doesnt_match",type="const int",value="6"\},\{name="global_int",type="int",value="6"\}\]} \
     {-file-list-globals: supply file and shlib, simple values}
 
 mi_gdb_test {55-file-list-globals -file "" -shlib file-statics --no-values} \

@@ -1,4 +1,4 @@
-# Copyright 2002
+# Copyright 2002, 2004
 # Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
@@ -68,13 +68,10 @@ gdb_file_cmd "${binfile}"
 
 gdb_test "future-break foo" "Breakpoint 1 at $hex: file .*libweak.c.*, line $decimal." "Set breakpoint on foo"
 
-# gdb_test "run" "Starting program: $binfile *\r\n\Disabling shared library breakpoints: 1\r\nReading symbols for shared libraries \[.+\]+ done\r\nBreakpoint 1 at $hex: file .*libweak.c.*, line $decimal\\.\r\nRe-enabling shared library breakpoint 1\r\nhi, in main\r\n\r\nBreakpoint 1, foo.*libweak.c.*" "continue to weak library bp"
-
 gdb_test "run" \
 "Starting program: $binfile\[ \r\]*
 Reading symbols for shared libraries \[+\\.]+ done\[ \r\]*
 Breakpoint 1 at $hex: file .*libweak.c.*, line $decimal.\[ \r\]*
-Re-enabling shared library breakpoint 1\[ \r\]*
 hi, in main\[ \r\]*
 \[ \r\]*
 Breakpoint 1, foo.*libweak.c.*\[ \r\]*" \

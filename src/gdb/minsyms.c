@@ -719,6 +719,32 @@ prim_record_minimal_symbol_and_info (const char *name, CORE_ADDR address,
   msym_bunch_index++;
   msym_count++;
   OBJSTAT (objfile, n_minsyms++);
+
+
+#ifdef NM_NEXTSTEP
+  /* APPLE LOCAL: We build a table of correspondence for symbols that are the
+     Posix compatiblity variants of symbols that exist in the library.  These 
+     are supposed to be always of the form <original symbol>$BUNCH_OF_JUNK.  
+     BUT, versions of the symbol with an _ in front are actually alternate
+     entry points, so we don't look at those.  
+     Also, don't add the stub table entries...  */
+  /* FIXME: There should really be some host specific method that we call
+     out to to test for equivalence.  Should clean this up if we ever want
+     to submit this stuff back.  */
+
+  if (objfile->check_for_equivalence)
+    {
+      char *name_end;
+
+      if (name[0] != '_')
+	{
+	  char *name_end = strchr(name, '$');
+	  if (name_end != NULL && strstr(name, "dyld_stub") != name)
+	      equivalence_table_add (objfile, name, name_end, msymbol);
+	}
+    }
+#endif
+
   return msymbol;
 }
 

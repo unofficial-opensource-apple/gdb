@@ -1,3 +1,40 @@
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/weak.exp: Update pattern text to recognize the
+	fix for r. 3586790.
+
+2004-11-29  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/slipnslide.exp: Update expected output text to
+	match what the new dyld interface puts out.
+
+2004-10-28  Jim Ingham  <jingham@apple.com>
+
+	* gdb.cp/cplus-local-vars.exp: We put out a "+" in the shared
+	library progress when we reread a shlib.  
+	* gdb.apple/file-statics.exp: Oops, I put in an actual hex
+	from one run.
+	* gdb.apple/inf-call-interrupt.exp: Add the shlib output
+	to the break-insert result.
+	* gdb.apple/mi1-varobj.exp: Ditto.
+	* gdb.apple/stack-list-frames-lite.exp: Ditto.
+	* gdb.apple/var-list-children.exp: Ditto.
+	* gdb.mi/mi-break.exp: Ditto.
+	* gdb.mi/mi-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-simplerun.exp: Ditto.
+	* gdb.mi/mi2-syn-frame.exp: Ditto.
+	* gdb.mi/mi2-until.exp: Ditto.
+	* gdb.mi/mi2-var-command.exp: Ditto.
+	* gdb.mi/mi2-var-display.exp: Ditto.
+	* gdb.mi/mi2-watch.exp: Ditto.
+	* lib/mi-support.exp: Ditto.
+	
+	* gdb.apple/slipnslide.exp: With the libSystem posix equivalent
+	symbol, break printf may make more than one breakpoint.
+	* gdb.base/annota1.exp: Ditto.
+	* gdb.base/annota1.exp: Ditto.
+	
 2004-10-12  Jim Ingham  <jingham@apple.com>
 
 	* gdb.apple/mi1-varobj.exp: gcc 4.0 calls "id" 

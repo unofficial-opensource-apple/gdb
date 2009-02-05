@@ -728,7 +728,10 @@ evaluate_subexp_standard (struct type *expect_type,
 	struct symbol *sym = NULL;
 	CORE_ADDR addr = 0;
 
-	selector = exp->elts[pc + 1].longconst;
+        /* APPLE LOCAL: FIXME: selector can be sign-extended because .longconst
+           is signed; mask off the upper 32 bits for now.  Must be fixed for
+           ObjC 64-bit programs.  */
+	selector = exp->elts[pc + 1].longconst & 0xffffffff;
 	nargs = exp->elts[pc + 2].longconst;
 	argvec = (struct value **) alloca (sizeof (struct value *) 
 					   * (nargs + 5));
@@ -795,6 +798,16 @@ evaluate_subexp_standard (struct type *expect_type,
 
             cached_values = 1;
           }
+
+        /* APPLE LOCAL: Instead of calling into the inferior two times
+           before calling the method itself, let's just grope around in
+           the ObjC runtime like we do elsewhere and speed everything up. */
+
+        addr = find_implementation (value_as_address (target), selector);
+        if (addr == 0)
+          error ("Target does not respond to this message selector.");
+
+#if 0 /* APPLE LOCAL: skip all this code */
 
 	/* Verify the target object responds to this method. The
 	   standard top-level 'Object' class uses a different name for
@@ -870,6 +883,9 @@ evaluate_subexp_standard (struct type *expect_type,
 	/* ret should now be the selector.  */
 
 	addr = value_as_long (ret);
+
+#endif /* #if 0 APPLE LOCAL: skip all this code */
+
 	if (addr)
 	  {
 	    struct symbol *sym = NULL;

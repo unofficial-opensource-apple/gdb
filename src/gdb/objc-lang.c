@@ -1710,7 +1710,7 @@ print_object_command (char *args, int from_tty)
 
   if (!call_po_at_unsafe_times)
     {
-      if (target_check_safe_call == 0)
+      if (target_check_safe_call () == 0)
 	{
 	  error ("Set call-po-at-unsafe-times to 1 to override this check.");
 	}
@@ -2004,6 +2004,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
 {
   CORE_ADDR subclass = class;
   char sel_str[2048];
+  int npasses;
   
   sel_str[0] = '\0';
 
@@ -2032,21 +2033,48 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
        }
 #endif
 
+#define CLS_NO_METHOD_ARRAY 0x4000
+      npasses = 0;
+
       for (;;) 
 	{
 	  CORE_ADDR mlist;
 	  unsigned long nmethods;
 	  unsigned long i;
-      
-	  mlist = read_memory_unsigned_integer (class_str.methods + 
-						(4 * mlistnum), 4);
-	  /* It looks like sometimes the ObjC runtime uses NULL to indicate
-	     then end of the method chunk pointers, and sometimes it uses -1.
-	     FIXME: We will have to change this when we get a 64 bit 
-	     runtime.  */
+	  npasses++;
 
-	  if (mlist == 0 || mlist == 0xffffffff) 
+	  /* As an optimization, if the ObjC runtime can tell that 
+	     a class won't need extra fields methods, it will make
+	     the method list a static array of method's.  Otherwise
+	     it will be a pointer to a list of arrays, so that the
+	     runtime can augment the method list in chunks.  There's
+	     a bit in the info field that tells which way this works. 
+	     Also, if a class has NO methods, then the methods field
+	     will be null.  */
+
+	  if (class_str.methods == 0x0)
 	    break;
+	  else if (class_str.info & CLS_NO_METHOD_ARRAY)
+	    {
+	      if (npasses == 1)
+		mlist = class_str.methods;
+	      else
+		break;
+	    }
+	  else
+	    {
+	      mlist = read_memory_unsigned_integer (class_str.methods + 
+						    (4 * mlistnum), 4);
+	      
+	      /* The ObjC runtime uses NULL to indicate then end of the
+		 method chunk pointers within an allocation block,
+		 and -1 for the end of an allocation block.  
+		 FIXME: We will have to change this when we get a 64 bit
+		 runtime.  */
+	      
+	      if (mlist == 0 || mlist == 0xffffffff) 
+		break;
+	    }
 
 	  nmethods = read_objc_methlist_nmethods (mlist);
 
@@ -2088,7 +2116,7 @@ find_implementation_from_class (CORE_ADDR class, CORE_ADDR sel)
   return 0;
 }
 
-static CORE_ADDR
+CORE_ADDR
 find_implementation (CORE_ADDR object, CORE_ADDR sel)
 {
   struct objc_object ostr;

@@ -2137,6 +2137,9 @@ reread_symbols (void)
 	      objfile->psymbol_cache = bcache_xmalloc (NULL);
 	      bcache_xfree (objfile->macro_cache);
 	      objfile->macro_cache = bcache_xmalloc (NULL);
+	      /* APPLE LOCAL: Also delete the table of equivalent symbols.  */
+	      equivalence_table_delete (objfile);
+	      /* END APPLE LOCAL */
 	      if (objfile->demangled_names_hash != NULL)
 		{
 		  htab_delete (objfile->demangled_names_hash);

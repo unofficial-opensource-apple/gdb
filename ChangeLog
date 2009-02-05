@@ -1,3 +1,10 @@
+2004-12-06  Jason Molenda  (jmolenda@apple.com)
+
+	* Info-template.plist: It looks like CFBundleDevelopmentRegion needs
+	to be defined; whatever.  Looking at two installed frameworks I see 
+	English is an acceptable setting, so there we go.  These are just 
+	private framework header files used for building gdb plug-ins anyway.
+
 2004-08-09  Klee Dienes  <kdienes@apple.com>
 
 	* Makefile: Post-process the man page to refer to
