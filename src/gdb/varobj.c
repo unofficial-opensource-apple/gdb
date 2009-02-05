@@ -521,6 +521,7 @@ safe_value_rtti_target_type (struct value *val, int *full, int *top, int *using_
 static struct value *
 varobj_fixup_value (struct value *in_value, 
 		    int use_dynamic_type,
+		    struct block *block,
 		    struct type **dynamic_type_handle)
 {
   /* Look up the full type of the varobj, and record that in
@@ -554,7 +555,7 @@ varobj_fixup_value (struct value *in_value,
 	     an ObjC class. */
 	  int ret_val;
 
-	  ret_val = safe_value_objc_target_type (in_value, &dynamic_type);
+	  ret_val = safe_value_objc_target_type (in_value, block, &dynamic_type);
 	  if (!ret_val)
 	    dynamic_type = NULL;
 	  else if (dynamic_type)
@@ -588,7 +589,7 @@ varobj_fixup_value (struct value *in_value,
 		 an ObjC class. */
 	      int ret_val;
 
-	      ret_val = safe_value_objc_target_type (in_value, &dynamic_type);
+	      ret_val = safe_value_objc_target_type (in_value, block, &dynamic_type);
 	      if (!ret_val)
 		dynamic_type = NULL;
 	      else if (dynamic_type)
@@ -685,6 +686,8 @@ varobj_create (char *objname,
       if ((type == USE_CURRENT_FRAME) || (type == USE_SELECTED_FRAME)
 	  || (type == USE_BLOCK_IN_FRAME))
 	fi = deprecated_selected_frame;
+      else if (type == NO_FRAME_NEEDED)
+	fi = NULL;
       else
 	/* FIXME: cagney/2002-11-23: This code should be doing a
 	   lookup using the frame ID and not just the frame's
@@ -707,6 +710,11 @@ varobj_create (char *objname,
 	  if (type == USE_BLOCK_IN_FRAME) 
 	    {
 	      warning ("Attempting to create USE_BLOCK_IN_FRAME variable with NULL block.");
+	      goto error_cleanup;
+	    }
+	  else if (type == NO_FRAME_NEEDED)
+	    {
+	      warning ("Attempting to create NO_FRAME_NEEDED variable with NULL block.");
 	      goto error_cleanup;
 	    }
 	  else if (fi != NULL)
@@ -772,7 +780,8 @@ varobj_create (char *objname,
 	     success, since technically the variable does not exist yet... */
 
 	      	      
-	  if ((var->root->use_selected_frame || varobj_pc_in_valid_block_p (var)) 
+	  if ((var->root->use_selected_frame || varobj_pc_in_valid_block_p (var)
+	       || type == NO_FRAME_NEEDED) 
 	      && gdb_evaluate_expression (var->root->exp, &var->value))
 	    {
 	      /* no error */
@@ -782,6 +791,7 @@ varobj_create (char *objname,
 	      var->type = VALUE_TYPE (var->value);
 
 	      var->value = varobj_fixup_value (var->value, varobj_use_dynamic_type, 
+					       block,
 					       &(var->dynamic_type));
 
 	      if (VALUE_LAZY (var->value))
@@ -2110,6 +2120,7 @@ variable_language (struct varobj *var)
     case language_c:
       lang = vlang_c;
       break;
+    case language_objcplus:
     case language_cplus:
       lang = vlang_cplus;
       break;
@@ -2372,7 +2383,8 @@ value_of_child (struct varobj *parent, int index,
       struct value *new_value;
 
       new_value = varobj_fixup_value (value, varobj_use_dynamic_type, 
-				  &dynamic_type);
+				      child->root->valid_block,
+				      &dynamic_type);
 
       /* value_of_child returns a value that has been released.  So if
 	 we are going to replace it, we need to free the old value,
@@ -2693,7 +2705,9 @@ c_value_of_root (struct varobj **var_handle, enum varobj_type_change *type_chang
       if (gdb_evaluate_expression (var->root->exp, &new_val))
 	{
 	  struct type *dynamic_type;
-	  new_val = varobj_fixup_value (new_val, varobj_use_dynamic_type, &dynamic_type);
+	  new_val = varobj_fixup_value (new_val, varobj_use_dynamic_type, 
+					var->root->valid_block,
+					&dynamic_type);
 	  if (varobj_use_dynamic_type && (var->dynamic_type != dynamic_type))
 	    {
 	      *type_changed = VAROBJ_DYNAMIC_TYPE_CHANGED;

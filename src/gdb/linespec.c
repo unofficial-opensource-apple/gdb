@@ -1650,8 +1650,30 @@ decode_all_digits (char **argptr, int funfirstline,
 	{
 	  struct symbol *func_sym;
 	  struct symtab_and_line sal;
-	      
-	  func_sym = find_pc_function (pc);
+          
+          /* If we have an objfile for the pc, then be careful to only
+             look in that objfile for the function symbol.  This is
+             important because if you are running gdb on a program
+             BEFORE it has been launched, the shared libraries might
+             overlay each other, in which case we find_pc_function may
+             return a function from another of these libraries.  That
+             might fool us into moving the breakpoint over the
+             prologue of this function, which is now totally in the
+             wrong place...  */
+             
+          if (val.symtab && val.symtab->objfile)
+            {
+              struct cleanup *restrict_cleanup;
+	      restrict_cleanup = 
+		make_cleanup_restrict_to_objfile 
+		(val.symtab->objfile);
+	      func_sym = find_pc_function (pc);
+	      do_cleanups (restrict_cleanup);
+            }
+          else
+            {
+              func_sym = find_pc_function (pc);
+            }
 	  if (func_sym)
 	    {
 	      sal = find_function_start_sal (func_sym, 1);

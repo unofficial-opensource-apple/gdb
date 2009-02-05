@@ -57,6 +57,9 @@
 #include <sys/ioctl.h>
 #endif
 
+/* APPLE LOCAL: -exec-abort support */
+#include "ui-out.h"
+
 #if defined (SIGIO) && defined (FASYNC) && defined (FD_SET) && defined (F_SETOWN)
 static void handle_sigio (int);
 #endif
@@ -623,7 +626,9 @@ kill_command (char *arg, int from_tty)
 
   if (ptid_equal (inferior_ptid, null_ptid))
     error ("The program is not being run.");
-  if (!query ("Kill the program being debugged? "))
+  /* APPLE LOCAL: Don't query if we're an MI command.  */
+  if (!ui_out_is_mi_like_p (uiout) 
+      && !query ("Kill the program being debugged? "))
     error ("Not confirmed.");
   target_kill ();
 

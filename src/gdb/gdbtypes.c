@@ -528,7 +528,7 @@ make_cv_type (int cnst, int voltl, struct type *type, struct type **typeptr)
 	 to do is to copy the core type into the new objfile.  */
 
       gdb_assert (TYPE_OBJFILE (*typeptr) == TYPE_OBJFILE (type)
-		  || TYPE_STUB (*typeptr));
+		  || (TYPE_STUB (*typeptr) || TYPE_IS_OPAQUE (*typeptr)));
       if (TYPE_OBJFILE (*typeptr) != TYPE_OBJFILE (type))
 	{
 	  TYPE_MAIN_TYPE (*typeptr)

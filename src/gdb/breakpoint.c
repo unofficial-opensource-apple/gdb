@@ -240,9 +240,6 @@ static void ep_skip_leading_whitespace (char **s);
 
 static void print_catch_info (bpstat bs);
 
-static struct cleanup *
-make_cleanup_restrict_search_to_shlib (char *requested_shlib);
-
 /* Prototypes for exported functions. */
 
 /* If FALSE, gdb will not use hardware support for watchpoints, even
@@ -4904,7 +4901,8 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 	  {
 	    struct obj_section *osect;
 	    osect = find_pc_sect_section (sal.pc, sal.section);
-	    b->bp_objfile = osect->objfile;
+	    if (osect)
+	      b->bp_objfile = osect->objfile;
 	  }
 	/* APPLE LOCAL: Mark the breakpoint as set so we don't try to reset
 	   it unless the objfile it was set in gets reread.  */
@@ -4913,52 +4911,6 @@ create_breakpoints (struct symtabs_and_lines sals, char **addr_string,
 	mention (b);
       }
   }    
-}
-
-
-/* Restricts the objfile search to the REQUESTED_SHILB.  Returns
-   a cleanup for the restriction, or NULL if no such shlib is
-   found.  */
-
-static struct cleanup *
-make_cleanup_restrict_search_to_shlib (char *requested_shlib)
-{
-  struct objfile *requested_objfile = NULL;
-  struct objfile *tmp_obj;
-
-  if (requested_shlib == NULL)
-    return NULL;
-  
-  /* Find the requested_objfile, if it doesn't exist, then throw an error.  Look
-     for an exact match on the name, and if that doesn't work, look for a match
-     on the filename, in case the user just gave us the library name.  */
-  ALL_OBJFILES (tmp_obj)
-  {
-    if (tmp_obj->name == NULL)
-      continue;
-    
-    if (strcmp (tmp_obj->name, requested_shlib) == 0)
-      {
-	requested_objfile = tmp_obj;
-	break;
-      }
-    else
-      {
-	char *filename = strrchr (tmp_obj->name, '/');
-	if ((filename != NULL) && (strcmp (requested_shlib, filename + 1) == 0))
-	  {
-	    requested_objfile = tmp_obj;
-	    break;
-	  }
-      }
-    
-  }
-
-  if (requested_objfile == NULL)
-    return NULL;
-  else
-    return make_cleanup_temporarily_restrict_to_objfile (requested_objfile);
-
 }
 
 /* Parse ARG which is assumed to be a SAL specification possibly
@@ -5016,7 +4968,7 @@ parse_breakpoint_sals (char **address,
 			
       if (requested_shlib != NULL)
 	{
-	  restrict_cleanup = make_cleanup_restrict_search_to_shlib (requested_shlib);
+	  restrict_cleanup = make_cleanup_restrict_to_shlib (requested_shlib);
 	  if (restrict_cleanup == NULL)
 	    error ("Couldn't locate shared library \"%s\" for breakpoint.", requested_shlib);
 	}
@@ -7635,7 +7587,7 @@ breakpoint_re_set_one (void *bint)
       old_chain = make_cleanup (reset_allow_objc_selectors_flag, 0);
       if (b->requested_shlib != NULL)
 	{
-	  if (make_cleanup_restrict_search_to_shlib (b->requested_shlib) == NULL)
+	  if (make_cleanup_restrict_to_shlib (b->requested_shlib) == NULL)
 	    error ("Couldn't find requested shlib: \"%s\" for breakpoint %d.\n", 
 		   b->requested_shlib, b->number);
 	}

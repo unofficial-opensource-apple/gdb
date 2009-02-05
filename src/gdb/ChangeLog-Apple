@@ -1,3 +1,85 @@
+2004-05-12  Jim Ingham  <jingham@apple.com>
+  
+         * gdbtypes.c (make_cv_type): We may be resolving an opaque
+       type as well as a stub type.  So include that in the assert 
+       when we are copying over a type from one objfile to another.
+	
+	* frame.c (refine_prologue_limit): Don't reset prev_line
+        to the prologue value every time round the loop!
+
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
+
+	* inflow.c (kill_command): Don't query for confirmation if
+	we're MIish.
+
+2004-04-13  Jim Ingham  <jingham@apple.com>
+
+	* dbxread.c: Back out the changes from 2004-02-03.  They do more
+	harm than good, and there is no clear way to get this right.
+	
+2004-03-12  Jim Ingham  <jingham@apple.com>
+
+	* breakpoint.c (make_cleanup_restrict_search_to_shlib): Moved to
+	objfiles.c where it belonged in the first place.  Also take "search"
+	out of the name.
+	* linespec.c (decode_all_digits): react to name change above.
+	* objfiles.c (make_cleanup_restrict_to_shlib): New function from
+	breakpoint.c.
+	* (objfile_matches_name): New function.
+	* varobj.c (varobj_create): Accept new NO_FRAME_NEEDED type.
+	* varobj.c: Define NO_FRAME_NEEDED varobj_type.
+	
+2004-03-05  Jim Ingham  <jingham@apple.com>
+
+	* Makefile.in: Move second LIBIBERTY instance on the build
+	line before the LTERMCAP & LICONV.  This works around a build
+	problem with a monolithic libSystem.
+
+	* breakpoint.c (create_breakpoints): Check for osect not null before
+	trying to get its objfile.
+	
+        * linespec.c (decode_all_digits): Only look in the objfile that
+	the file:line breakpoint resolved in to move the pc past the prologue.
+	
+	* printcmd.c (print_address_symbolic): Undo the sign extension
+	that we get if CORE_ADDR is bigger than the native pointer size.
+	
+2004-02-03  Jim Ingham  <jingham@apple.com>
+
+        * objc-lang.c (find_methods): If matching an objc function
+	name, make sure the whole name matches, not just the part that
+	parse_method recognizes.
+
+	* objc-lang.c (print_object_command): Check that it is safe
+	to call functions on this thread before running the printForDebugger.
+	(_initialize_objc_lang): Add the set variable to turn off the
+	behavior above.
+	target.c (update_target, cleanup_current_target): Handle new
+	check_call_safe entry.
+	target.h: Add check_call_safe entry.
+	
+
+	* dbxread.c (process_one_symbol): Add a hack to work around the
+	fact that gcc3 doesn't emit LBRAC/RBRAC stabs for functions with
+	no locals at the function scope.
+
+2004-01-30  Jim Ingham  <jingham@apple.com>
+
+	* objc-lang.c (find_implementation_from_class): The end of method
+	list marker in the ObjC runtime is EITHER a 0 method, or a -1
+	method pointer.
+	(value_objc_target_type): pass in the block so we don't accidentally
+	find another struct with the same name as our class.
+	* objc-lang.h: mutatis mutandi for value_objc_target_type.
+	* varobj.c (varobj_fixup_value): Pass the block down so we can
+	get it to value_objc_target_type.
+	(variable_language): Use C++ for the language for objects made in
+	ObjC++ files.
+	(value_of_child): pass block to varobj_fixup_value.
+	(c_value_of_root): ditto.
+	* wrapper.c (safe_value_objc_target_type): pass down the block again.
+	* wrapper.h: mutatis mutandi for safe_value_objc_target_type.
+	
 2003-12-03  Jim Ingham  <jingham@apple.com>
 
 	* stack.c (get_frame_language): Make sure the function sym is

@@ -382,6 +382,62 @@ mi_cmd_exec_status (char *command, char **argv, int argc)
 
 }
 
+/* exec-safe-call takes one optional argument which is a thread id.  
+   It then checks to the best of its ability whether it would be safe
+   to call functions on that thread.  */
+
+enum mi_cmd_result
+mi_cmd_exec_safe_call (char *command, char **argv, int argc)
+{
+  enum mi_cmd_result rc = MI_CMD_DONE;
+  struct cleanup *old_cleanups;
+  ptid_t current_ptid = inferior_ptid;
+  int safe;
+
+  if (argc > 1)
+    {
+      xasprintf (&mi_error_message,
+		 "mi_cmd_exec_safe_call: USAGE: <threadnum>");
+      return MI_CMD_ERROR;
+    }
+
+  if (!target_has_execution)
+    {
+      ui_out_field_int (uiout, "safe", 0);
+      ui_out_field_string (uiout, "reason", "program not running");
+    }
+
+  if (target_executing)
+    {
+      ui_out_field_int (uiout, "safe", 0);
+      ui_out_field_string (uiout, "reason", "program executing");
+    }
+
+  if (argc == 0)
+    {
+      old_cleanups = make_cleanup (null_cleanup, NULL);
+    }
+  else
+    {
+      old_cleanups = make_cleanup_restore_current_thread (current_ptid, 0);
+      rc = gdb_thread_select (uiout, argv[0], 0);
+      
+      /* RC is enum gdb_rc if it is successful (>=0)
+	 enum return_reason if not (<0). */
+      if ((int) rc < 0 && (enum return_reason) rc == RETURN_ERROR)
+	return MI_CMD_CAUGHT_ERROR;
+      else if ((int) rc >= 0 && rc == GDB_RC_FAIL)
+	return MI_CMD_ERROR;
+    }
+
+  safe = target_check_safe_call (current_ptid);
+
+  ui_out_field_int (uiout, "safe", safe);
+  do_cleanups (old_cleanups);
+
+  return rc;
+}
+
 enum mi_cmd_result
 mi_cmd_thread_select (char *command, char **argv, int argc)
 {

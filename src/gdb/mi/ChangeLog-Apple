@@ -1,3 +1,35 @@
+2004-05-07  Jason Molenda  (jmolenda@apple.com)
+
+	* gdbmi.texinfo: Quote curly braces in examples properly.
+
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Route -exec-abort MI command to CLI's "kill".
+
+2004-05-03  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-stack.c (print_syms_for_block) Take & use the 
+	filter regexp.
+	(mi_cmd_file_list_statics): Add a fourth argument - 
+	a filter to apply to the symbols before printing.
+	(mi_cmd_file_list_globals): Ditto.
+	(print_globals_for_symtab): Pass the regexp filter through.
+
+2004-03-12  Jim Ingham  <jingham@apple.com>
+
+	* gdbmi.texinfo: Document new -file-list-statics and -file-list-globals
+	commands.
+	* mi-cmd-stack.c (mi_cmd_file_list_statics): New function.
+	* (print_globals_for_symtab): New function.
+	* (mi_cmd_file_list_globals): New function.
+	* (print_syms_for_block): Handle static block as well.
+	* mi-cmds.h: Add the ftype's for the new commands.
+	* mi-cmds.c: And add them to the command array.
+	
+2004-02-03  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmds.c: Add exec-safe-call.
+	* mi-main.c (mi_cmd_exec_safe_call): New function.
 2003-10-30  Jim Ingham  <jingham@apple.com>
 
 	* mi-main.c (mi_insert_notify_hooks): Add the "stack_changed"

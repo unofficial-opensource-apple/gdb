@@ -542,6 +542,8 @@ cleanup_target (struct target_ops *t)
 	    normal_pid_to_str);
   de_fault (to_bind_function,
 	    (int (*) (char *)) return_one);
+  de_fault (to_check_safe_call,
+	    (int (*) (char *)) return_one);
 #undef de_fault
 }
 
@@ -644,6 +646,7 @@ update_current_target (void)
       INHERIT (to_make_corefile_notes, t);
       INHERIT (to_bind_function, t);
       INHERIT (to_get_thread_local_address, t);
+      INHERIT (to_check_safe_call, t);
       INHERIT (to_magic, t);
 
 #undef INHERIT

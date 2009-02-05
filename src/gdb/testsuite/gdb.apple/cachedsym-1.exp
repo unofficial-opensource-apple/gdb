@@ -534,7 +534,7 @@ verbose "\[DEBUG\] mycacheddir=$mycacheddir" 1
 
 remote_exec build "mv $defcachedir $defcachedir.junk4"
 if [ file exists $defcachedir ] {
-    verbose "*** Cached sym dir remove faile\n" 1
+    verbose "*** Cached sym dir remove failed\n" 1
 } else {
     verbose "*** Cached sym dir remove successed\n" 1
 }
@@ -593,7 +593,7 @@ gdb_test "set generate-cached-symfiles on" "" "t10: turn on generate-cached-symf
 
 gdb_test "file $binfile" \
          "Reading.*\r\nMapped symbols for $binfile.*" \
-          "t10: load bin file to see if i uses cached sym file"
+          "t10: load bin file to see if it uses cached sym file"
 
 gdb_test "info sharedlibrary" \
          "The DYLD shared library.*1 ${testfile}.*exec.*${binfile}.*${myLib}/${testfile}\.syms.*2 dyld.*commpage symbols read.*syms\." \
@@ -661,5 +661,15 @@ gdb_test "info sharedlibrary" \
          "t10: check sharedlibrary info after unload executable file" 
          
 
+remote_exec build "rm -r $defcachedir"
+remote_exec build "rm -r $defcachedir.junk"
+remote_exec build "rm -r $defcachedir.junk1"
+remote_exec build "rm -r $defcachedir.junk2"
+remote_exec build "rm -r $defcachedir.junk3"
+remote_exec build "rm -r $defcachedir.junk4"
+
+if [ file exists $defcachedir ] {
+    verbose "*** Cached sym dir remove failed\n" 1
+    }
 gdb_exit
 return 0

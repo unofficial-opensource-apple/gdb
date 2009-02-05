@@ -42,6 +42,7 @@
 #include "gdb_string.h"
 #include "buildsym.h"
 #include "breakpoint.h"
+#include "objfiles.h"
 
 /* Prototypes for local functions */
 
@@ -1614,7 +1615,7 @@ struct swap_objfile_list_cleanup
 };
 
 void
-do_cleanup_temporarily_restrict_to_objfile (void *arg)
+do_cleanup_restrict_to_objfile (void *arg)
 {
   struct swap_objfile_list_cleanup *data =
     (struct swap_objfile_list_cleanup *) arg;
@@ -1624,7 +1625,7 @@ do_cleanup_temporarily_restrict_to_objfile (void *arg)
 }
 
 struct cleanup *
-make_cleanup_temporarily_restrict_to_objfile (struct objfile *objfile)
+make_cleanup_restrict_to_objfile (struct objfile *objfile)
 {
   struct swap_objfile_list_cleanup *data
     = (struct swap_objfile_list_cleanup *) xmalloc (sizeof (struct swap_objfile_list_cleanup));
@@ -1632,7 +1633,61 @@ make_cleanup_temporarily_restrict_to_objfile (struct objfile *objfile)
   objfile_list = NULL;
   objfile_add_to_restrict_list (objfile);
   data->restrict_state = objfile_restrict_search (1);
-  return make_cleanup (do_cleanup_temporarily_restrict_to_objfile, (void *) data);
+  return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
+}
+
+int
+objfile_matches_name (struct objfile *objfile, char *name)
+{
+  if (objfile->name == NULL)
+    return 0;
+  
+  if (strcmp (objfile->name, name) == 0)
+    {
+      return 1;
+    }
+  else
+    {
+      const char *filename = lbasename (objfile->name);
+      if ((filename != NULL) && (strcmp (name, filename) == 0))
+	{
+	  return 1;
+	}
+    }
+  
+  return 0;
+}
+
+/* Restricts the objfile search to the REQUESTED_SHILB.  Returns
+   a cleanup for the restriction, or NULL if no such shlib is
+   found.  */
+
+struct cleanup *
+make_cleanup_restrict_to_shlib (char *requested_shlib)
+{
+  struct objfile *requested_objfile = NULL;
+  struct objfile *tmp_obj;
+
+  if (requested_shlib == NULL)
+    return NULL;
+  
+  /* Find the requested_objfile, if it doesn't exist, then throw an error.  Look
+     for an exact match on the name, and if that doesn't work, look for a match
+     on the filename, in case the user just gave us the library name.  */
+  ALL_OBJFILES (tmp_obj)
+  {
+    if (objfile_matches_name (tmp_obj, requested_shlib))
+      {
+	requested_objfile = tmp_obj;
+	break;
+      }
+  }
+
+  if (requested_objfile == NULL)
+    return (void *) -1;
+  else
+    return make_cleanup_restrict_to_objfile (requested_objfile);
+
 }
 
 /* Get the first objfile.  If the restrict_search flag is set,

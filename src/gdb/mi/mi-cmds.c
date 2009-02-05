@@ -60,7 +60,8 @@ struct mi_cmd mi_cmds[] =
   {"environment-directory", 0, 0, mi_cmd_env_dir},
   {"environment-path", 0, 0, mi_cmd_env_path},
   {"environment-pwd", 0, 0, mi_cmd_env_pwd},
-  {"exec-abort", 0, 0},
+  /* APPLE LOCAL: Xcode wants to kill off inferiors that have been naughty.  */
+  {"exec-abort", "kill", 0},
   {"exec-arguments", "set args %s", 0},
   {"exec-continue", 0, mi_cmd_exec_continue},
   {"exec-finish", 0, mi_cmd_exec_finish},
@@ -69,6 +70,7 @@ struct mi_cmd mi_cmds[] =
   {"exec-next-instruction", 0, mi_cmd_exec_next_instruction},
   {"exec-return", 0, mi_cmd_exec_return},
   {"exec-run", 0, mi_cmd_exec_run},
+  {"exec-safe-call", 0, 0, mi_cmd_exec_safe_call},
   {"exec-show-arguments", 0, 0},
   {"exec-signal", 0, 0},
   {"exec-step", 0, mi_cmd_exec_step},
@@ -82,6 +84,8 @@ struct mi_cmd mi_cmds[] =
   /* APPLE LOCAL fix-and-continue */
   {"file-fix-file", "fix %s", 0},
   {"file-list-symbol-files", 0, 0},
+  {"file-list-statics", 0, 0, mi_cmd_file_list_statics},
+  {"file-list-globals", 0, 0, mi_cmd_file_list_globals},
   {"file-symbol-file", "symbol-file %s", 0},
   {"file-sharedlibrary-section-info", "sharedlibrary section-info %s", 0},
   {"file-sharedlibrary-info", "info sharedlibrary %s", 0},

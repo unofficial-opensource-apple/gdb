@@ -51,5 +51,5 @@ extern char *find_imps (struct symtab *symtab, struct block *block,
 
 extern struct value *value_nsstring (char *ptr, int len);
 
-extern struct type *value_objc_target_type (struct value *);
+extern struct type *value_objc_target_type (struct value *, struct block *);
 int should_lookup_objc_class ();

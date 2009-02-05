@@ -1,3 +1,14 @@
+2004-05-05  Jason Molenda  (jmolenda@apple.com)
+
+	* gdb.apple/xcode/exec-abort.exp: New testsuite file for
+	-exec-abort MI command.	
+	* gdb.apple/xcode/callfuncs.exp: Arbitrary support program.
+
+2004-03-15 Igor Likhatchev (igor@apple.com)
+
+	*gdb.apple/cachedsym-1.exp:  at the very end, remove all 
+	directories with cached symfiles created during test.
+
 2003-11-16  Klee Dienes  (kdienes@apple.com)
 
 	* gdb.apple/sections.exp: New test, to ensure that section
