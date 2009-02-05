@@ -1,3 +1,25 @@
+2004-07-15  Jason Molenda  (jmolenda@apple.com)
+
+        * mi-main.c (mi_cmd_thread_set_pc): Split apart filename and line
+        number manually instead of using decode_line_1.  Add appropriate
+        error checking to catch bad filenames/line #'s.  
+
+2004-05-27  Jim Ingham  <jingham@apple.com>
+
+      * mi-cmd-stack.c (mi_cmd_file_list_statics): Not being able to
+      find a symtab for the CURRENT_FRAME_COOKIE, or for a "" filename
+      should just return an empty list, not an error.
+
+2004-05-25  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-break.c (mi_cmd_break_catch): Return from unsetting
+	the catchpoints rather than continuing on to set new ones (doh!)
+	
+2004-05-18  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-stack.c (mi_cmd_file_list_statics): Added the
+	"*CURRENT FRAME*" cookie.
+	
 2004-05-07  Jason Molenda  (jmolenda@apple.com)
 
 	* gdbmi.texinfo: Quote curly braces in examples properly.

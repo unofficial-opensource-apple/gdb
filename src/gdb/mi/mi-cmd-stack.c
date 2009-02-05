@@ -467,6 +467,10 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
    It prints all the static variables in the given file, in
    the given shared library.  If the shared library name is empty, then it
    looks in all shared libraries for the file.
+
+   If the file name is the special cookie *CURRENT FRAME* then it prints
+   the statics for the currently selected frame.
+
    If PRINT_VALUES is 0, only the variable names are printed.
    If PRINT_VALUES is 1, the values are also printed.
    If PRINT_VALUES is 2, then varobj's are made for all the variables as
@@ -474,6 +478,8 @@ list_args_or_locals (int locals, int values, struct frame_info *fi,
    If the filter string is provided, only symbols that DON'T match
    the filter will be printed.
    */
+
+#define CURRENT_FRAME_COOKIE "*CURRENT FRAME*"
 
 enum mi_cmd_result
 mi_cmd_file_list_statics (char *command, char **argv, int argc)
@@ -513,30 +519,73 @@ mi_cmd_file_list_statics (char *command, char **argv, int argc)
   else
     filterp = NULL;
 
-  if (*shlibname != '\0')
-    {
-      cleanup_list = make_cleanup_restrict_to_shlib (shlibname);
-      if (cleanup_list == (void *) -1)
-	{
-	  error ("mi_cmd_file_list_statics: Could not find shlib \"%s\".", shlibname);
-	}
-
-    }
-  else
-    cleanup_list = make_cleanup (null_cleanup, NULL);
-
   /* Probably better to not restrict the objfile search, while doing the 
      PSYMTAB to SYMTAB conversion to miss some types that are defined outside the
      current shlib.  So get the psymtab first, and then convert after cleaning up.  */
 
-  file_ps = lookup_partial_symtab (filename);
+  if (strcmp (filename, CURRENT_FRAME_COOKIE) == 0) 
+    {
+      CORE_ADDR pc;
+      struct obj_section *objsec;
 
+      pc = get_frame_pc (get_selected_frame ());
+      objsec = find_pc_section (pc);
+      if (objsec != NULL && objsec->objfile != NULL)
+	cleanup_list = make_cleanup_restrict_to_objfile (objsec->objfile);
+      else
+	cleanup_list = make_cleanup (null_cleanup, NULL);
+
+      file_ps = find_pc_psymtab (pc);
+      do_cleanups (cleanup_list);
+    }
+  else
+    {
+      if (*shlibname != '\0')
+	{
+	  cleanup_list = make_cleanup_restrict_to_shlib (shlibname);
+	  if (cleanup_list == (void *) -1)
+	    {
+	      error ("mi_cmd_file_list_statics: Could not find shlib \"%s\".", shlibname);
+	    }
+	  
+	}
+      else
+	cleanup_list = make_cleanup (null_cleanup, NULL);
+      
+      file_ps = lookup_partial_symtab (filename);
+      
+      /* FIXME: dbxread.c only uses the SECOND N_SO stab when making psymtabs.  It discards
+         the first one.  But that means that if filename is an absolute path, it is likely
+         lookup_partial_symtab will fail.  If it did, try again with the base name.  */
+
+      if (file_ps == NULL)
+        if (lbasename(filename) != filename)
+          file_ps = lookup_partial_symtab (lbasename (filename));
+      
+      do_cleanups (cleanup_list);
+
+    }
+
+  /* If the user passed us a real filename and we couldn't find it, that is an error.  But
+     "" or current frame, could point to a file or objfile with no debug info.  In which
+     case we should just return an empty list.  */
+  
   if (file_ps == NULL)
-    error ("mi_cmd_file_list_statics: Could not get symtab for file \"%s\".", filename);
-
-  do_cleanups (cleanup_list);
-
+    {
+      if (filename[0] == '\0' || strcmp (filename, CURRENT_FRAME_COOKIE) == 0)
+	{
+	  cleanup_list = make_cleanup_ui_out_list_begin_end (uiout, "statics");
+	  do_cleanups (cleanup_list);
+	  return MI_CMD_DONE;
+	}
+      else
+	error ("mi_cmd_file_list_statics: Could not get symtab for file \"%s\".", filename);
+    }
+  
   file_symtab = PSYMTAB_TO_SYMTAB (file_ps);
+
+  if (file_symtab == NULL)
+    error ("Could not convert psymtab to symtab for file \"%s\"", filename);
 
   block = BLOCKVECTOR_BLOCK (file_symtab->blockvector, STATIC_BLOCK);
 

@@ -932,16 +932,19 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
   ui_out_field_string (uiout, "state", ptr);
   ui_out_spaces (uiout, 1);
 
+  if (ui_out_is_mi_like_p (uiout))
+    ui_out_field_string (uiout, "path", (symname != NULL) ? symname : "");
+
   if (name == NULL)
     {
       if (ui_out_is_mi_like_p (uiout))
 	{
 	  char *s = dyld_entry_string (j, 1);
-	  ui_out_field_string (uiout, "path", s);
+	  ui_out_field_string (uiout, "description", s);
 	  xfree (s);
 	}
       else
-	ui_out_field_skip (uiout, "path");
+	ui_out_field_skip (uiout, "description");
 
       if (addr != NULL)
 	{
@@ -975,7 +978,7 @@ void dyld_print_entry_info (struct dyld_objfile_entry *j, unsigned int shlibnum,
     }
   else
     {
-      ui_out_field_string (uiout, "path", name);
+      ui_out_field_string (uiout, "description", name);
 
       if (slide == NULL)
 	{

@@ -295,6 +295,7 @@ mi_cmd_break_catch (char *command, char **argv, int argc)
 	  if (exception_catchpoints_enabled (ex_event))
 	    {
 	      disable_exception_catch (ex_event);
+	      return MI_CMD_DONE;
 	    }
 	  else
 	    {

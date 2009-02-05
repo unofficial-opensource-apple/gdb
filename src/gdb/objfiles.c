@@ -1636,24 +1636,46 @@ make_cleanup_restrict_to_objfile (struct objfile *objfile)
   return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
 }
 
+/* Check whether the OBJFILE matches NAME.  We want to match either the
+   full name, or the base name.  We also want to handle the case where
+   OBJFILE comes from a cached symfile.  In that case, the OBJFILE name
+   will be the cached symfile name, but the real shlib name will be in
+   the OBFD for the OBJFILE.  So in the case of a cached symfile
+   we match against the bfd name instead.  */
+
+#define CACHED_SYM_SUFFIX ".syms"
 int
 objfile_matches_name (struct objfile *objfile, char *name)
 {
+  const char *filename;
+  int len; 
+  static int suffixlen = strlen (CACHED_SYM_SUFFIX);
+  const char *real_name;
+
   if (objfile->name == NULL)
     return 0;
-  
-  if (strcmp (objfile->name, name) == 0)
+
+  /* See if this is a cached symfile, in which case we use the bfd name
+     if it exists.  */
+  len = strlen (objfile->name);
+  if (len > suffixlen 
+      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0
+      && objfile->obfd != NULL && objfile->obfd->filename != NULL)
     {
-      return 1;
+      real_name = objfile->obfd->filename;
     }
   else
-    {
-      const char *filename = lbasename (objfile->name);
-      if ((filename != NULL) && (strcmp (name, filename) == 0))
-	{
-	  return 1;
-	}
-    }
+    real_name = objfile->name;
+
+  if (strcmp (real_name, name) == 0)
+    return 1;
+
+  filename = lbasename (real_name);
+  if (filename == NULL)
+    return 0;
+
+  if (strcmp (filename, name) == 0)
+    return 1;
   
   return 0;
 }

@@ -1,3 +1,7 @@
+2004-07-15  Klee Dienes  <kdienes@apple.com>
+
+	* gdb.apple/slipnslide.exp: Update to use new "description" field.
+
 2004-05-05  Jason Molenda  (jmolenda@apple.com)
 
 	* gdb.apple/xcode/exec-abort.exp: New testsuite file for

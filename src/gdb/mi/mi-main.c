@@ -467,21 +467,36 @@ mi_cmd_thread_select (char *command, char **argv, int argc)
    switch to that thread, however (except temporarily to set the pc).
    The return value is the new bottom stack frame after resetting the
    pc.
-
+   
    If you specify a linespec that is outside the current function, the
    command will return an error, and not reset the pc.  To force it to
-   set the pc anyway, add "-f" before any of the other arguments. */
+   set the pc anyway, add "-f" before any of the other arguments.
+   
+   Optional -f flag may be provided, preceding other arguments.
+   First argument is the thread #.
+   Second argument is a FILENAME:LINENO specification.
+
+   Lesson learned: Don't do write MI commands that take their arguments
+   like this (positional, multiple bits of data suck together).  
+   Use separate flags for each piece of individual information e.g.
+   cf mi_cmd_disassemble().  For instance, it'd be that much easier to
+   parse if -thread-set-pc took things like "-f -t 5 -s foo.c -l 35",
+   and future expansion would be easier to implement as well.
+   */
 
 enum mi_cmd_result
 mi_cmd_thread_set_pc (char *command, char **argv, int argc)
 {
   enum gdb_rc rc;
-  struct symtabs_and_lines sals;
+  struct symtab *s;
   struct symtab_and_line sal;
   ptid_t current_ptid = inferior_ptid;
   struct cleanup *old_cleanups;
   struct symbol *old_fun, *new_fun;
   int stay_in_function = 1;
+  const char *filename;
+  int lineno;
+  CORE_ADDR new_pc;  
 
   if (argc == 3)
     {
@@ -496,7 +511,7 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   if (argc != 2)
     {
       xasprintf (&mi_error_message,
-		 "mi_cmd_thread_select: USAGE: <-f> threadnum pc.");
+		 "mi_cmd_thread_select: USAGE: [-f] threadnum file:line");
       return MI_CMD_ERROR;
     }
 
@@ -510,48 +525,62 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   else if ((int) rc >= 0 && rc == GDB_RC_FAIL)
     return MI_CMD_ERROR;
 
-  /* Okay, we set the thread, now set the pc: */
+  /* Okay, we set the thread, now set the pc.  Find the filename
+     and the line number parts; skip over quoting that may be put
+     around them.  */
 
-  sals = decode_line_spec_1 (argv[1], 1);
-  if (sals.nelts == 0)
-    error ("Error resolving line spec \"%s\".", argv[1]);
+  /* FIXME: If a filename begins with a quote character, we're
+     going to skip over it.  e.g if this is set:
+       -thread-set-pc 1 "\"file with quote.c:20"
+     the following loop does the wrong thing.  */
+  filename = argv[1];
+  while (filename != NULL && (*filename == '"' || *filename == '\\'))
+    filename++;
 
-  if (sals.nelts != 1)
-    {
-      xfree (sals.sals);
-      error ("Line spec \"%s\" resolved to more than one location.", argv[1]);
-    }
+  char *c = strrchr (filename, ':');
+  if (c == NULL)
+    error ("mi_cmd_thread_set_pc: Unable to find colon character in last argument, '%s'.", argv[1]);
 
-  sal = sals.sals[0];
-  xfree (sals.sals);
+  errno = 0;
+  lineno = strtol (c + 1, NULL, 10);
+  if (errno != 0)
+    error ("mi_cmd_thread_set_pc: Error parsing line number part of argument, '%s'.", argv[1]);
 
-  if (sal.symtab == 0 && sal.pc == 0)
-    error ("No source file has been specified.");
+  *c = '\0';
+  s = lookup_symtab (filename);
+  if (s == NULL)
+    error ("mi_cmd_thread_set_pc: Unable to find source file name '%s'.", filename);
+  if (!find_line_pc (s, lineno, &new_pc))
+    error ("mi_cmd_thread_set_pc: Invalid line number '%d'", lineno);
 
-  resolve_sal_pc (&sal);
-  
+  /* Get a sal for the new PC for later in the function where we want
+     to set the CLI default source/line #'s and such.  */
+  sal = find_pc_line (new_pc, 0);
+  if (sal.symtab != s)
+    error ("mi_cmd_thred_set_pc: Found symtab '%s' by filename lookup, but symtab '%s' by PC lookup.", s->filename, sal.symtab->filename);
+
   if (stay_in_function)
     {
       old_fun = get_frame_function (get_current_frame());
       if (old_fun == NULL)
 	error ("Can't find the function for old_pc: 0x%lx.",
 	       (unsigned long) get_frame_pc (get_current_frame ()));
-      new_fun = find_pc_function (sal.pc);
+      new_fun = find_pc_function (new_pc);
       if (new_fun == NULL)
 	error ("Can't find the function for new pc 0x%lx.",
-	       (unsigned long) sal.pc);
+	       (unsigned long) new_pc);
       if (!SYMBOL_MATCHES_NAME (old_fun, SYMBOL_LINKAGE_NAME (new_fun)))
 	error ("New pc: 0x%lx outside of current function", 
-	       (unsigned long) sal.pc);
+	       (unsigned long) new_pc);
     }
 
-  write_pc (sal.pc);
+  write_pc (new_pc);
 
   /* We have to set the stop_pc to the pc that we moved to as well, so
      that if we are stopped at a breakpoint in the new location, we will
      properly step over it. */
 
-  stop_pc = sal.pc;
+  stop_pc = new_pc;
 
   /* Update the current source location as well, so 'list' will do the right
      thing.  */
@@ -561,7 +590,7 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
   /* Update the current breakpoint location as well, so break commands will
      do the right thing.  */
 
-  set_default_breakpoint (1, sal.pc, sal.symtab, sal.line);
+  set_default_breakpoint (1, new_pc, sal.symtab, sal.line);
 
   /* Is this a Fix and Continue situation, i.e. do we have two
      identically named functions which are different?  We have

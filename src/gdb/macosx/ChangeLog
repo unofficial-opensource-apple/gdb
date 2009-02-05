@@ -1,3 +1,20 @@
+2004-07-15  Klee Dienes  <kdienes@apple.com>
+
+	* macosx-nat-dyld-info.c (dyld_print_entry_info): Always output
+	the name (as defined by objfile->name) as "path".  Emit the
+	descriptive text (which used to be in "path") as "description".
+	See Radar #3727326.
+
+2004-07-06  Jason Molenda  (jmolenda@apple.com)
+
+	* kdp-transactions.c (kdp_transaction): Fix typeo in error message.
+
+2004-06-17  Jim Ingham   <jingham@apple.com>
+
+	* macosx-tdep.c (macosx_symbol_type): Check for section number
+	less than 1: the CodeWarrior linker produces symbols that have
+	type N_SECT, but whose n_sect is 0.
+	
 2004-05-11  Jim Ingham   <jingham@apple.com>
 
 	* ppc-macosx-tdep.c (ppc_frame_chain): Only trust the sp_setup_pc

@@ -1,3 +1,27 @@
+2004-07-15  Klee Dienes  <kdienes@platinum.local>
+
+	* corefile.c (core_file_command): Split into core_file_attach.
+	* gdbcore.h (core_file_attach): Add prototype.
+	* main.c (quote_string): Remove (it was unused).
+	Call core_file_attach in place instead of core_file_command.
+
+2004-06-13  Jim Ingham  <jingham@apple.com>
+
+	* valops.c (value_cast): Don't coerce a reference argument
+	to the type it refers to if we are planning to cast it to
+	another reference type.
+	
+2004-06-08  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_matches_name): A better way to
+	handle caches symfiles is to use the bfd name if there
+	is a cached symfile.
+	
+2004-05-21  Jim Ingham  <jingham@apple.com>
+
+	* objfiles.c (objfile_matches_name): Consider the names a 
+	match if the objfile has a ".syms" on the end.
+	
 2004-05-12  Jim Ingham  <jingham@apple.com>
   
          * gdbtypes.c (make_cv_type): We may be resolving an opaque
