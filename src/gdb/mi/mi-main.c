@@ -49,6 +49,7 @@
 #include "gdb.h"
 #include "frame.h"
 #include "wrapper.h"
+#include "source.h"
 
 enum
   {
@@ -495,6 +496,16 @@ mi_cmd_thread_set_pc (char *command, char **argv, int argc)
      properly step over it. */
 
   stop_pc = sal.pc;
+
+  /* Update the current source location as well, so 'list' will do the right
+     thing.  */
+
+  set_current_source_symtab_and_line (&sal);
+
+  /* Update the current breakpoint location as well, so break commands will
+     do the right thing.  */
+
+  set_default_breakpoint (1, sal.pc, sal.symtab, sal.line);
 
   /* Is this a Fix and Continue situation, i.e. do we have two
      identically named functions which are different?  We have
@@ -2075,14 +2086,15 @@ mi_create_interpreter (char *name, int mi_version)
   struct gdb_interpreter *interp;
 
   interp = gdb_new_interpreter (name, (void *) mi_version,
-				    mi_out_new (mi_version), 
-				    mi_interpreter_init,
-				    mi_interpreter_resume,
-				    NULL /* do one event proc */,
-				    mi_interpreter_suspend,
-				    mi_interpreter_delete,
-				    mi_interpreter_exec,
-				    mi_interpreter_prompt);
+				mi_out_new (mi_version), 
+				mi_interpreter_init,
+				mi_interpreter_resume,
+				NULL /* do one event proc */,
+				mi_interpreter_suspend,
+				mi_interpreter_delete,
+				mi_interpreter_exec,
+				mi_interpreter_prompt,
+				NULL);
   if (interp == NULL)
     error ("Couldn't allocate a new interpreter for the mi interpreter\n");
   if (gdb_add_interpreter (interp) != 1)
@@ -2464,6 +2476,50 @@ mi_cmd_interpreter_set (char *command, char **argv, int argc)
   return MI_CMD_QUIET;
 }
 			    
+/* This implements the "interpreter complete command" which takes an
+   interpreter, a command string, and optionally a cursor position 
+   within the command, and completes the string based on that interpreter's
+   completion function.  */
+
+enum mi_cmd_result 
+mi_cmd_interpreter_complete (char *command, char **argv, int argc)
+{
+  struct gdb_interpreter *interp_to_use;
+  enum mi_cmd_result result = MI_CMD_DONE;
+  int cursor;
+  
+  if (argc < 2 || argc > 3)
+    {
+      asprintf (&mi_error_message, 
+		"Wrong # or arguments, should be \"%s interp command <cursor>\".",
+		command);
+      return MI_CMD_ERROR;
+    }
+
+  interp_to_use = gdb_lookup_interpreter (argv[0]);
+  if (interp_to_use == NULL)
+    {
+      asprintf (&mi_error_message,
+		"Could not find interpreter \"%s\".", argv[0]);
+      return MI_CMD_ERROR;
+    }
+  
+  if (argc == 3)
+    {
+      cursor = atoi (argv[2]);
+    }
+  else
+    {
+      cursor = strlen (argv[1]);
+    }
+
+  if (gdb_interpreter_complete (interp_to_use, argv[1], argv[1], cursor) == 0)
+      return MI_CMD_ERROR;
+  else
+    return MI_CMD_DONE;
+
+}
+
 /*
  * mi_insert_notify_hooks - This inserts a number of hooks that are meant to produce
  * async-notify ("=") MI messages while running commands in another interpreter
@@ -2480,6 +2536,7 @@ mi_insert_notify_hooks (void)
   modify_breakpoint_hook = mi_interp_modify_breakpoint_hook;
 
   frame_changed_hook = mi_interp_frame_changed_hook;
+  stack_changed_hook = mi_interp_stack_changed_hook;
   context_hook = mi_interp_context_hook;
 
   /* command_line_input_hook = mi_interp_command_line_input; */
@@ -2499,6 +2556,7 @@ mi_remove_notify_hooks ()
   modify_breakpoint_hook = NULL;
 
   frame_changed_hook = NULL;
+  stack_changed_hook = NULL;
   context_hook = NULL;
 
   /* command_line_input_hook = NULL; */

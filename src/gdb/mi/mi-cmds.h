@@ -86,6 +86,7 @@ extern mi_cmd_argv_ftype mi_cmd_exec_status;
 extern mi_cmd_argv_ftype mi_cmd_gdb_exit;
 extern mi_cmd_argv_ftype mi_cmd_interpreter_set;
 extern mi_cmd_argv_ftype mi_cmd_interpreter_exec;
+extern mi_cmd_argv_ftype mi_cmd_interpreter_complete;
 extern mi_cmd_argv_ftype mi_cmd_mi_verify_command;
 extern mi_cmd_argv_ftype mi_cmd_enable_timings;
 extern mi_cmd_argv_ftype mi_cmd_mi_no_op;

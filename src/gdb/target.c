@@ -41,7 +41,7 @@ extern int errno;
 
 static void target_info (char *, int);
 
-void cleanup_target (struct target_ops *);
+static void cleanup_target (struct target_ops *);
 
 static void maybe_kill_then_create_inferior (char *, char *, char **);
 
@@ -240,7 +240,7 @@ add_target (struct target_ops *t)
 		  target_struct_allocsize * sizeof (*target_structs));
     }
   target_structs[target_struct_size++] = t;
-/*  cleanup_target (t); */
+  /* cleanup_target (t); */
 
   if (targetlist == NULL)
     add_prefix_cmd ("target", class_run, target_command,
@@ -358,7 +358,7 @@ maybe_kill_then_create_inferior (char *exec, char *args, char **env)
 /* Clean up a target struct so it no longer has any zero pointers in it.
    We default entries, at least to stubs that print error messages.  */
 
-void
+static void
 cleanup_target (struct target_ops *t)
 {
 
@@ -648,6 +648,11 @@ update_current_target (void)
 
 #undef INHERIT
     }
+
+  cleanup_target (&current_target);	/* Fill in the gaps */
+
+  if (targetdebug)
+    setup_target_debug ();
 }
 
 /* Push a new target type into the stack of the existing target accessors,
@@ -714,11 +719,6 @@ push_target (struct target_ops *t)
 
   update_current_target ();
 
-  cleanup_target (&current_target);	/* Fill in the gaps */
-
-  if (targetdebug)
-    setup_target_debug ();
-
   return prev != 0;
 }
 
@@ -753,7 +753,6 @@ unpush_target (struct target_ops *t)
   xfree (cur);			/* Release the target_stack_item */
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   return 1;
 }

@@ -804,6 +804,11 @@ varobj_create (char *objname,
 		}
 	      else
 		{
+		  /* If we haven't been able to parse either the value
+		     or the type from the expression, it is probably bogus.
+		     Discard it so we can remake it later when it might
+		     actually work.  */
+		  free_current_contents (&var->root->exp);
 		  var->root->in_scope = 0;
 		  var->type = NULL;
 		  var->value = NULL;
@@ -2172,6 +2177,14 @@ varobj_type_is_equal_p (struct varobj *old_var, struct varobj *new_var)
   char *old_type, *new_type;
   int result;
   
+  /* Don't consider them equal if either has a NULL type pointer.  */
+  if (old_var->type == NULL || new_var->type == NULL)
+    return 0;
+
+  /* FIXME: Just comparing the names is not good enough.  They have to have
+     the same children as well, or we could end up casting the variable to
+     another of the same name but different layout behind the user's back.  */
+
   old_type = varobj_get_type (old_var);
   new_type = varobj_get_type (new_var);
 
@@ -2185,13 +2198,19 @@ varobj_type_is_equal_p (struct varobj *old_var, struct varobj *new_var)
 
 /* What is the ``struct value *'' of the root variable VAR? 
 
-   Returns the current value of VAR_HANDLE.  On return, TYPE_CHANGED
-   will be 1 if the type has changed, and 0 otherwise.  Finally, if
-   the type has changed in the generic value_of_root code, then the
-   old varobj will be discarded, and a new one made for it.  However,
-   if the type changed down in the language part of value_of_root
-   (possibly because the dynamic type changed, the varobj may just be
-   fixed up, so you shouldn't depend on its being replaced or not.  */
+   Returns the current value of VAR_HANDLE, or NULL if there was 
+   some error.  
+
+   On return, TYPE_CHANGED will be 1 if the type has changed, and 0
+   otherwise.  However, if the return value is NULL, TYPE_CHANGED
+   won't be set.
+   
+   Finally, if the type has changed in the generic value_of_root code,
+   then the old varobj will be discarded, and a new one made for it.
+   However, if the type changed down in the language part of
+   value_of_root (possibly because the dynamic type changed, the
+   varobj may just be fixed up, so you shouldn't depend on its being
+   replaced or not.  */
 
 static struct value *
 value_of_root (struct varobj **var_handle, enum varobj_type_change *type_changed)
@@ -2216,7 +2235,10 @@ value_of_root (struct varobj **var_handle, enum varobj_type_change *type_changed
      One example where this could happen is if the varobj is an ObjC expression
      which references something that hasn't been initialized yet... In this
      case one of the "lookup implementation for selector & object" functions
-     can crash, so we can't even get the type.  */
+     can crash, so we can't even get the type.  
+
+     FIXME: Shouldn't we be able to short-circuit this here if the valid block
+     of the varobj is the same as the currently selected block?  */
 
   if (var->root->use_selected_frame || get_type (var) == NULL)
     {
@@ -2225,14 +2247,15 @@ value_of_root (struct varobj **var_handle, enum varobj_type_change *type_changed
       tmp_var = varobj_create (NULL, name_of_variable (var), (CORE_ADDR) 0, NULL,
 			       USE_SELECTED_FRAME);
       /* If there was some error creating the variable, or we couldn't
-	 find an expression for this variable, then just return NULL.
+	 find an expression for this variable, or we couldn't get its type,
+	 then just return NULL.
 	 There is no need to update it if it can't be parsed. */
 
       if (tmp_var == NULL)
 	{
 	  return NULL;
 	}
-      else if (tmp_var->root->exp == NULL)
+      else if (tmp_var->root->exp == NULL || tmp_var->type == NULL)
 	{
 	  free_variable (tmp_var);
 	  return NULL;
@@ -2809,8 +2832,10 @@ c_type_of_child (struct varobj *parent, int index)
     case TYPE_CODE_ARRAY:
       /* APPLE LOCAL: Don't call get_target_type here, that
 	 skips over typedefs, but what the variable was typedef'ed
-	 to be is often useful. */
-      type = TYPE_TARGET_TYPE (parent->type); 
+	 to be is often useful.  However, DO call check_typedef
+         on the parent, or you won't get the real type of the
+         child, you'll get what the parent was typedef'ed to.  */
+      type = TYPE_TARGET_TYPE (check_typedef(parent->type)); 
       /* END APPLE LOCAL */
       break;
 
@@ -2884,7 +2909,7 @@ c_value_of_variable (struct varobj *var)
     case TYPE_CODE_ARRAY:
       {
 	char *number;
-	xasprintf (&number, "[%d]", var->num_children);
+	xasprintf (&number, "[%d]", varobj_get_num_children (var));
 	return (number);
       }
       /* break; */

@@ -5,15 +5,16 @@ set_board_info c++compiler "c++"
 set_board_info cflags "-no-cpp-precomp"
 set_board_info cxxflags "-no-cpp-precomp"
 
-#set_board_info debug_flags "-gused"
-set_board_info debug_flags "-gfull"
+# By default debugging option for compiler is "-g".
+# Uncomment one of these two lines to set debugging option explicitly:
+#set debug_option "-gused"
+set debug_option "-gfull"
 
+# Uncomment this line to use environment variable for debugging option:
+#set debug_option $env(DEBUG_OPTION)
+
+set_board_info debug_flags $debug_option
 set_board_info mathlib ""
-
-# 3096429 - -data-evaluate-expression stomps on unwindonsignal setting.  - This has been fixed.
-#setup_site_fail "gdb.apple/inf-call-interrupt.exp" "*" "MI evaluate bar() with unwindonsignal set" "3096429"
-#setup_site_fail "gdb.apple/inf-call-interrupt.exp" "*" "MI verify back at main after calling bar with unwindonsignal set" "3096429"
-#setup_site_fail "gdb.apple/inf-call-interrupt.exp" "*" "MI verify back at main after calling bar with data-evaluate-expression -u" "3096429"
 
 # 3094426 - gdb future-break on selector doesn't work with hand-loaded shlib
 #         - gdb doesn't pre-load libraries without a specified offset
@@ -22,13 +23,23 @@ setup_site_fail "gdb.apple/ivars.exp" "*" "continue to obj bp: Program exited (d
 setup_site_fail "gdb.apple/ivars.exp" "*" "continue to obj bp: Program exited (dylib slide from 0x90000000) (dynamic prog)" "3094426"
 setup_site_fail "gdb.apple/ivars.exp" "*" "continue to obj bp: Program exited (dylib maybe without a slide) (dynamic prog)" "3094426"
 
-# 3067257 - backtrace incorrect when breakpoint on shlib func from main. - This is fixed in Tachyon.  But it fails again in Panther - to investigate.
-#setup_site_fail "gdb.base/annota1.exp" "powerpc-apple-darwin*" "backtrace from shlibrary" "3067257"
+# 3361020 - gdb can't parse prologue of printf() well enough to set breakpoint in function body
+setup_site_fail "gdb.base/annota1.exp" "powerpc-apple-darwin*" "backtrace from shlibrary" "3361020"
 
 # 3061801 - gdb doesn't deliver signals to inferior proccess
 setup_site_fail "gdb.base/annota1.exp" "*" "send SIGUSR1" "3061801"
+setup_site_fail "gdb.base/annota1.exp" "*" "backtrace @ signal handler" "3061801"
 setup_site_fail "gdb.base/annota1.exp" "*" "signal sent" "3061801"
 setup_site_fail "gdb.base/signals.exp" "*" "signal SIGUSR1" "3061801"
+
+#3441153 Sometimes gdb appends two ^M s to the end of line.
+setup_site_fail "gdb.base/callfuncs.exp" "powerpc-apple-darwin*" "return after stop in call dummy preserves register contents" "3441153"
+setup_site_fail "gdb.base/callfuncs.exp" "powerpc-apple-darwin*" "continue after stop in call dummy preserves register contents" "3441153"
+setup_site_fail "gdb.base/callfuncs.exp" "powerpc-apple-darwin*" "gdb function calls preserve register contents" "3441153"
+
+# 3090270 - Can't examine ObjC variables while debugging ObjC++ file
+setup_site_fail "gdb.apple/cplusplus-local-vars.exp" "*" "print acidDivision" "3090270"
+setup_site_fail "gdb.apple/cplusplus-local-vars.exp" "*" "print my_i" "3090270"
 
 # 3067308 - Unable to fetch XMM registers or set float registers.
 setup_site_fail "gdb.base/call-rt-st.exp" "i386-apple-darwin*" "print print_one_double(*d1)" "3067308"
@@ -36,6 +47,12 @@ setup_site_fail "gdb.base/return.exp" "i386-apple-darwin*" "correct value return
 setup_site_fail "gdb.base/return2.exp" "i386-apple-darwin*" "float value returned successfully" "3067308"
 setup_site_fail "gdb.base/return2.exp" "i386-apple-darwin*" "double value returned successfully" "3067308"
 setup_site_fail "gdb.apple/po.exp" "i386-apple-darwin*" "po \[NSNumber numberWithFloat:83.2090\]" "3067308"
+
+# 3453263 - "VTT for" printed when examining virtual inheritance class instance object
+setup_site_fail "gdb.c++/inherit.exp" "*" "print g_vE" "3453263"
+
+# 3454447 - gdb won't ptype nested class without qualified name
+setup_site_fail "gdb.c++/local.exp" "*" "ptype NestedInnerLocal" "3454447"
 
 # 3082119 - gcc emits bogus stab on i386
 setup_site_fail "gdb.c++/classes.exp" "i386-apple-darwin*" "ptype class vB" "3082119"
@@ -65,15 +82,31 @@ setup_site_fail "gdb.base/corefile.exp" "*" "core-file command" "3061579"
 #setup_site_fail "gdb.base/corefile.exp" "*" "accessing mmapped data (mapping address not found in core file)" "3223691"
 #setup_site_fail "gdb.base/corefile.exp" "*" "core" "3223691"
 
+# 3453034 - Main app is moved aside, then replaced with a new version: gdb gets confused on re-start
+setup_site_fail "gdb.base/reread.exp" "*" "run to foo() second time" "3453034"
+setup_site_fail "gdb.base/reread.exp" "*" "second pass: run to foo() second time" "3453034"
+
 # 3056074 - expression parser misunderstands array typedef
 setup_site_fail "gdb.base/printcmds.exp" "*" "p a1\[0\]" "3056074"
 setup_site_fail "gdb.base/printcmds.exp" "*" "p a1\[9\]" "3056074"
 setup_site_fail "gdb.base/printcmds.exp" "*" "p a2\[0\]" "3056074"
 setup_site_fail "gdb.base/printcmds.exp" "*" "p a2\[3\]" "3056074"
 
+# 3452966 - some typedef debug info not being emitted with gcc 3.3
+setup_site_fail "gdb.base/ptype.exp" "*" "ptype t_char_array" "3452966"
+
+# 3451959 - gdb doesn't get shlib short name from DYLD_INSERT_LIB dylib before execution
+setup_site_fail "gdb.apple/slipnslide.exp" "*" "libmylib and libsystem will both try to load at same addr" "3451959"
+
 # these fail when GDB is optimized; they're just the result of code moving in a way the test-case doesn't expect
 setup_site_fail "gdb.base/selftest.exp" "*" "next over dirsize initialization ended up at odd location" ""
 setup_site_fail "gdb.base/selftest.exp" "*" "next over symarg initialization ended up at odd location" ""
+
+# 3361206 - With cached symfiles, gdb has invalid obstack chunk pointers in ncurses/libSystem objfiles
+setup_site_fail "gdb.base/maint.exp" "*" "(timeout) maint print objfiles" "3361206"
+setup_site_fail "gdb.base/maint.exp" "*" "maint print objfiles: header" "3361206"
+setup_site_fail "gdb.base/maint.exp" "*" "maint print objfiles: psymtabs" "3361206"
+setup_site_fail "gdb.base/maint.exp" "*" "maint print objfiles: symtabs" "3361206"
 
 # 3054660 - maint info sections CODE/DATA don't list the correct info
 setup_site_fail "gdb.base/maint.exp" "*" "maint info sections CODE" "3054660"
@@ -109,19 +142,11 @@ setup_site_fail "gdb.c++/annota2.exp" "i386-apple-darwin*" "watch triggered on a
 # fails in FSF version as well.  Radar 3169193  tracks this - it's a compiler problem.
 setup_site_fail "gdb.c++/namespace.exp" "*" "print 'AAA::c'" "3169193"
 
-# not yet analyzed
-setup_site_fail "gdb.c++/templates.exp" "*" "constructor breakpoint" ""
-# constructor breakpoint fails just due to "canceled" against "cancelled" issue.
-setup_site_fail "gdb.c++/templates.exp" "*" "print Foo<volatile char *>::foo" ""
-setup_site_fail "gdb.c++/templates.exp" "*" "print Garply<Garply<char> >::garply" ""
+# 3455282 - C++ parser doesn't correctly canonicalize template-instantiation::class-function in some cases
+setup_site_fail "gdb.c++/templates.exp" "*" "print Foo<volatile char *>::foo" "3455282"
 
-# not yet analyzed
-setup_site_fail "gdb.mi/mi1-var-block.exp" "*" "update foo2 should be out of scope" ""
-
-# not yet analyzed
-setup_site_fail "gdb.threads/pthreads.exp" "*" "continue to bkpt at common_routine in thread 2 (arg=0)" ""
-setup_site_fail "gdb.threads/pthreads.exp" "*" "continue to bkpt at common_routine in thread 2" ""
-setup_site_fail "gdb.threads/pthreads.exp" "*" "stopped before calling common_routine 15 times" ""
+# 3271737 - restricting a breakpoint to a thread doesn't seem to work
+setup_site_fail "gdb.threads/pthreads.exp" "*" "continue to bkpt at common_routine in thread 2 (arg=0)" "3271737"
 
 # 3121250 - gcc should emit vector qualifiers in debug infomation
 setup_site_fail "gdb.arch/altivec-abi.exp" "powerpc-apple-darwin*" "vector value returned correctly" "3121250"
@@ -144,29 +169,15 @@ setup_site_fail "gdb.base/store.exp" "i386-apple-darwin*" "next field 2" "312680
 setup_site_fail "gdb.base/store.exp" "i386-apple-darwin*" "next field 3" "3126806"
 setup_site_fail "gdb.base/store.exp" "i386-apple-darwin*" "next field 4" "3126806"
 
-# looks like a bogus test, not converted to new output for non intel
-setup_site_fail "gdb.base/float.exp" "powerpc-apple-darwin*" "info float" ""
-
-# new 'advance' command and recent changes to 'until'; will wait for them to settle out a bit
-setup_site_fail "gdb.base/until.exp" "*" "until func, not called by current frame" ""
 #3311730 - advance works as tbreak
 setup_site_fail "gdb.base/advance.exp" "powerpc-apple-darwin*" "advance function not called by current frame" "3311730"
 setup_site_fail "gdb.base/advance.exp" "powerpc-apple-darwin*" "continue to call to func3 in main" "3311730"
 setup_site_fail "gdb.base/advance.exp" "powerpc-apple-darwin*" "advance function called as param" "3311730"
 setup_site_fail "gdb.base/advance.exp" "powerpc-apple-darwin*" "advance with no argument" "3311730"
 
-
-#3310715 - wrong info on weak library
-setup_site_fail "gdb.apple/weak.exp" "powerpc-apple-darwin*" "load with missing weak lib, hope for no warnings" "3310715"
-setup_site_fail "gdb.apple/weak.exp" "powerpc-apple-darwin*" "check sharedlibrary entry for missing weak library pre-run" "3310715"
-
 #3313204  - Breakpoint doesn't invoke breakpoint commands if the function is called from gdb
 setup_site_fail "gdb.base/break.exp" "powerpc-apple-darwin*" "called user-defined function on breakpoint in called function" "3313204"
 
-#3313491 - If function consists of only one statement, gdb stops after that statement.
-setup_site_fail "gdb.base/funcargs.exp" "powerpc-apple-darwin*" "print *stp" "3313491"
-setup_site_fail "gdb.base/funcargs.exp" "powerpc-apple-darwin*" "run to call5a" "3313491"
-setup_site_fail "gdb.base/funcargs.exp" "powerpc-apple-darwin*" "print st" "3313491"
-setup_site_fail "gdb.base/funcargs.exp" "powerpc-apple-darwin*" "continue to call5b (sizeof long == sizeof int)" "3313491"
-setup_site_fail "gdb.base/funcargs.exp" "powerpc-apple-darwin*" "print un (sizeof long == sizeof int)" "3313491"
+# 3445277 - Touching bin file causes malloc/free error message
+setup_site_fail "gdb.apple/cachedsym-1.exp" "powerpc-apple-darwin*" "t8: load file to see if it causes malloc/free error message" "3445277"
 

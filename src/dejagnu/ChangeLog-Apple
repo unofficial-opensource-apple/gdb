@@ -1,3 +1,79 @@
+2003-11-04  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (cfm.exp): Memory leak problem fixed.
+
+2003-10-21  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macos.exp (fix-small-c.exp): Fixed F&C problems after
+	an aborted fix happens.
+
+2003-10-18  Jim Ingham  <jingham@apple.com>
+
+	* baseboards/macosx.exp: Fixed prologue parser problem, remove
+	the setup_site_fails for it and a related bug.
+
+2003-10-20  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (pthreads.exp): Radar was duped to another;
+	use main radar's # instead.
+
+2003-10-17  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (cfm.exp): Note radar about memory bloat
+	(which eventually causes gdb to be killed off by expect or dejagnu).
+	(fix-small-c.exp): Add radar for F&C problem.
+	(pthreads.exp): Add radar for breakpoint-on-thread not woring right.
+
+2003-10-16  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (ovldbreak.exp): Radar filed for prologue
+	parser problem.
+	(templates.exp): Remove unnecessary setup_site_fails.  Add radar
+	for C++ template parser bug.
+	(mi1-var-block.exp): Test case tweaked; remove setup_site_fail.
+
+2003-10-15  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (local.exp): Add new radar for NestedInnerLocal
+	ptype'ing w/o scope qualifier.
+
+2003-10-14  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (inherit.exp): Add new radar for g_vE fail.
+	(reread.exp): Add new radar for resetting breakpoint fails.
+	(ptype.exp): Add new radar for typedefs missing fail.
+	(until.exp): Remove radarless entry.
+
+2003-10-13  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp (cplusplus-local-vars.exp): Add pointer
+	to r. 3090270.
+	(float.exp): Remove kfail for this test, test is now updated to 
+	do something useful on powerpc platform.
+	(callfuncs.exp): Tag a few more occasionally-failing tests with 3441153.
+	(annota1.exp): Add additional kfail for 3061801.
+	(weak.exp): Drop 3310715.
+	(slipnslide.exp): Drop 3445707, add 3451959.
+
+2003-10-09  Igor Likhatchev <igor@apple.com>
+
+        * baseboards/macosx.exp: added setup_site_fail for Radar  3445707
+
+2003-10-08  Igor Likhatchev <igor@apple.com>
+
+        * baseboards/macosx.exp: added setup_site_fail for Radar 3441153 
+
+2003-09-24  Igor Likhatchev (igor@apple.com)
+
+	* baseboards/macosx.exp: added 'set debug_option $env(DEBUG_OPTION)'
+	for use of environment variable;
+	Added setup_site_fail for Radar 3361206; removed 3096429
+
+2003-08-06  Jason Molenda  (jmolenda@apple.com)
+
+	* baseboards/macosx.exp: Update annota1.exp fail to mention
+	3361020.
+
 2003-07-02  Igor Likhatchev (igor@apple.com)
         * baseboards/macosx.exp: added setup_site_fail for Radars 3313204,3313491; removed 3223691.
 

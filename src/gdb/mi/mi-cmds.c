@@ -97,6 +97,7 @@ struct mi_cmd mi_cmds[] =
   {"gdb-version", "show version", 0},
   {"interpreter-set", 0, 0, mi_cmd_interpreter_set},    
   {"interpreter-exec", 0, 0, mi_cmd_interpreter_exec},
+  {"interpreter-complete", 0, 0, mi_cmd_interpreter_complete},
   {"kod-info", 0, 0},
   {"kod-list", 0, 0},
   {"kod-list-object-types", 0, 0},
@@ -111,6 +112,8 @@ struct mi_cmd mi_cmds[] =
   {"overlay-off", 0, 0},
   {"overlay-on", 0, 0},
   {"overlay-unmap", 0, 0},
+  /* APPLE LOCAL: Xcode needs -pid-info to find the inferior's pid.  */
+  {"pid-info", "info pid", 0},
   {"signal-handle", 0, 0},
   {"signal-list-handle-actions", 0, 0},
   {"signal-list-signal-types", 0, 0},

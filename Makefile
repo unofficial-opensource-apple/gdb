@@ -53,7 +53,7 @@ endif
 endif
 
 GDB_VERSION = 5.3-20030128
-GDB_RC_VERSION = 292
+GDB_RC_VERSION = 309
 
 BINUTILS_VERSION = 2.13-20021117
 BINUTILS_RC_VERSION = 46
@@ -160,7 +160,7 @@ CONFIG_OTHER_OPTIONS=--disable-serial-configure
 ifneq ($(findstring macosx,$(CANONICAL_ARCHS))$(findstring darwin,$(CANONICAL_ARCHS)),)
 CC = cc -arch $(HOST_ARCHITECTURE) -no-cpp-precomp
 CC_FOR_BUILD = NEXT_ROOT= cc -no-cpp-precomp
-CDEBUGFLAGS = -g -Os
+CDEBUGFLAGS = -g -Os -mdynamic-no-pic
 CFLAGS = $(strip $(RC_CFLAGS_NOARCH) $(CDEBUGFLAGS) -Wall -Wimplicit -Wno-long-double)
 HOST_ARCHITECTURE = $(shell echo $* | sed -e 's/--.*//' -e 's/powerpc/ppc/' -e 's/-apple-macosx.*//' -e 's/-apple-macos.*//' -e 's/-apple-darwin.*//')
 endif

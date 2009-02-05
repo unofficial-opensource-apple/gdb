@@ -73,6 +73,11 @@ struct objc_method {
   CORE_ADDR imp;
 };
 
+static void find_methods (struct symtab *symtab, char type,
+                          const char *class, const char *category,
+                          const char *selector, struct symbol **syms,
+                          unsigned int *nsym, unsigned int *ndebug);
+
 /* Should we lookup ObjC Classes as part of ordinary symbol resolution? */
 int lookup_objc_class_p = 1;
 
@@ -1370,7 +1375,7 @@ parse_method (char *method, char *type, char **class,
   return s2;
 }
 
-void
+static void
 find_methods (struct symtab *symtab, char type, 
 	      const char *class, const char *category, 
 	      const char *selector, struct symbol **syms, 
@@ -1453,7 +1458,7 @@ find_methods (struct symtab *symtab, char type,
 	  ((nselector == NULL) || (strcmp (selector, nselector) != 0)))
 	continue;
 
-      sym = find_pc_function (SYMBOL_VALUE_ADDRESS (msymbol));
+      sym = find_pc_sect_function (SYMBOL_VALUE_ADDRESS (msymbol), SYMBOL_BFD_SECTION (msymbol));
       if (sym != NULL)
         {
           const char *newsymname = SYMBOL_DEMANGLED_NAME (sym);
@@ -1497,7 +1502,8 @@ find_methods (struct symtab *symtab, char type,
     *ndebug = cdebug;
 }
 
-char *find_imps (struct symtab *symtab, struct block *block,
+char *
+find_imps (struct symtab *symtab, struct block *block,
 		 char *method, struct symbol **syms, 
 		 unsigned int *nsym, unsigned int *ndebug)
 {
@@ -2102,10 +2108,11 @@ value_objc_target_type (struct value *val)
 
   /* Don't try to get the dynamic type of an objc_class object.  This is the
      class object, not an instance object, so it won't have the fields the
-     instance object has. */
+     instance object has.  Also be careful to check for NULL, since val may be
+     a typedef or pointer to an incomplete type.  */
 
-  if (TYPE_TAG_NAME (base_type) != NULL 
-      && (strcmp (TYPE_TAG_NAME (base_type), "objc_class") == 0))
+  if ((base_type == NULL) || (TYPE_TAG_NAME (base_type) != NULL 
+      && (strcmp (TYPE_TAG_NAME (base_type), "objc_class") == 0)))
     return NULL;
 
   if (TYPE_CODE (base_type) == TYPE_CODE_CLASS)
@@ -2119,9 +2126,14 @@ value_objc_target_type (struct value *val)
       /* The first field is the isa field (offset by TYPE_N_BASECLASSES in
 	 case we ever add hierarchy info to the ObjC class types.)  
          isa points to the dynamic type class object.  The "name" field of
-         that object gives us the dynamic class name.  */
+         that object gives us the dynamic class name.  However, again we
+         might get an incomplete type that we have baseclass info for,
+         so make sure we aren't indexing past the end of the fields array.  */
 
       i = TYPE_N_BASECLASSES (base_type);
+
+      if (i >= TYPE_NFIELDS (base_type))
+	return NULL;
 
       t_field_name = TYPE_FIELD_NAME (base_type, i);
       if (t_field_name && (strcmp_iw (t_field_name, "isa") == 0))

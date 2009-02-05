@@ -1,3 +1,43 @@
+2003-10-30  Jim Ingham  <jingham@apple.com>
+
+	* mi-main.c (mi_insert_notify_hooks): Add the "stack_changed"
+	hooks to the hooks we use.  This way we get notified if the
+	return command changes the stack.
+	(mi_remove_notify_hooks): Remove "stack_changed.
+
+2003-10-22  Jason Molenda  (jmolenda@apple.com)
+
+	* mi-cmds.c (mi_cmds): Add "-pid-info" MI command.
+
+2003-10-20  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmd-disas.c (mi_cmd_disassemble): Allow the data-disassemble
+	command to that "-s -n" as a pair, and throttle the disassembly
+	to the number of lines specified in by the -n argument.
+
+2003-10-15  Jim Ingham  <jingham@apple.com>
+	
+	* mi-cmd-break.c: (mi_cmd_break_insert): Handle the "-s" option
+	for shared-library specific breakpoints.
+
+2003-10-08  James Ingham  <jingham@apple.com>
+
+	* mi-cmd-disas.c (mi_cmd_disassemble): Change the data-disassemble 
+	command so if you only provide -s, we disassemble the function
+	around the start address.
+
+2003-09-26  Jim Ingham  <jingham@apple.com>
+
+	* mi-cmds.c: Add interpreter-complete.
+	* mi-cmds.h: ditto
+	* mi-main.c (mi_create_interpreter): pass a NULL complete_proc.
+	(mi_cmd_interpreter_complete): New function.
+
+2003-08-26  Jason Molenda  (jmolenda@apple.com)
+
+        * mi-main.c (mi_cmd_thread_set_pc): Update current source line
+        and current default breakpoint location after moving the pc.
+
 2003-08-08  Jim Ingham (jingham@apple.com)
 
 	* mi-main.c (mi_execute_async_cli_command): Use 

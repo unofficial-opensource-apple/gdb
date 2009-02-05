@@ -583,9 +583,10 @@ extern struct objfile_list *objfile_list;
 
 struct objfile *objfile_get_first ();
 struct objfile *objfile_get_next (struct objfile *);
-void objfile_restrict_search (int);
+int objfile_restrict_search (int);
 void objfile_add_to_restrict_list (struct objfile *objfile);
 void objfile_clear_restrict_list ();
+struct cleanup *make_cleanup_temporarily_restrict_to_objfile (struct objfile *objfile);
 
 /* APPLE LOCAL: These manage & look up obj_sections in the ordered_sections
    array.  */

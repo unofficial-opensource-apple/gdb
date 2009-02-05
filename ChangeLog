@@ -1,3 +1,12 @@
+2003-10-31  Jason Molenda  (jmolenda@apple.com)
+
+	* Makefile (CDEBUGFLAGS): Add -mdynamic-no-pic.
+
+2003-10-03  Jason Molenda  (jmolenda@apple.com)
+
+	* cache-symfiles.sh: Run nm on dylibs to ensure they're well formed
+	before feeding them to gdb.
+
 2003-07-24  Klee Dienes <kdienes@apple.com>
 
 	* cache-symfiles.sh: Use the proper prefix for dyld; no longer

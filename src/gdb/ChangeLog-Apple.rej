@@ -1,0 +1,14 @@
+***************
+*** 1,3 ****
+  2003-08-05  Jason Molenda  (jmolenda@apple.com)
+  
+          * fix-and-continue.c (check_restriction_cxx_zerolink): New function
+--- 1,8 ----
++ 2003-08-06  Klee Dienes  <kdienes@apple.com>
++ 
++ 	* objfiles.c (_initialize_objfiles): Add aliases for
++ 	generate-cached-symfiles and use-cached-symfiles.
++ 
+  2003-08-05  Jason Molenda  (jmolenda@apple.com)
+  
+          * fix-and-continue.c (check_restriction_cxx_zerolink): New function

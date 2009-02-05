@@ -355,7 +355,6 @@ kdp_attach (char *args, int from_tty)
   kdp_ops.to_has_execution = 1;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   inferior_ptid = pid_to_ptid (KDP_REMOTE_ID);
   kdp_stopped = 1;
@@ -382,7 +381,6 @@ kdp_detach (char *args, int from_tty)
   kdp_ops.to_has_execution = 0;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   if (kdp_is_bound (&c)) {
     kdpret = kdp_destroy (&c);
@@ -445,7 +443,6 @@ static void kdp_reattach_command (char *args, int from_tty)
   kdp_ops.to_has_execution = 0;
 
   update_current_target ();
-  cleanup_target (&current_target);
 
   kdp_mourn_inferior();
 
