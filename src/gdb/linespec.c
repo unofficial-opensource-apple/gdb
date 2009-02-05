@@ -35,6 +35,7 @@
 #include "block.h"
 #include "objc-lang.h"
 #include "linespec.h"
+#include "language.h"
 #include "ui-out.h" /* for ui_out_is_mi_like_p */
 
 extern int metrowerks_ignore_breakpoint_errors_flag;
@@ -206,6 +207,16 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
   int i1 = 0;
   int ibase;
   char *class_name = type_name_no_tag (t);
+  struct cleanup *old_chain;
+
+  /* APPLE LOCAL: The whole point of this exercise is to look for
+     C++ methods, so let's set the language to cplusplus before trying.  
+     FIXME: Dunno whether this will break Java or not, but since we 
+     don't use our gdb for Java, this isn't that big a deal.  The comment
+     at the start of the function says this is g++ specific anyway...
+  */
+  old_chain = make_cleanup_restore_language (language_cplus);
+
 
   /* Ignore this class if it doesn't have a name.  This is ugly, but
      unless we figure out how to get the physname without the name of
@@ -267,6 +278,9 @@ find_methods (struct type *t, char *name, struct symbol **sym_arr)
   if (i1 == 0)
     for (ibase = 0; ibase < TYPE_N_BASECLASSES (t); ibase++)
       i1 += find_methods (TYPE_BASECLASS (t, ibase), name, sym_arr + i1);
+
+  /* APPLE LOCAL - restore the language.  */
+  do_cleanups (old_chain);
 
   return i1;
 }
@@ -1191,7 +1205,7 @@ decode_objc (char **argptr, int funfirstline, struct symtab *file_symtab,
 	  values.sals[0].line = 0;
 	  values.sals[0].end = 0;
 	  values.sals[0].pc = SYMBOL_VALUE_ADDRESS (sym_arr[0]);
-	  values.sals[2].section = SYMBOL_BFD_SECTION (sym_arr[0]);
+	  values.sals[0].section = SYMBOL_BFD_SECTION (sym_arr[0]);
 	}
       return values;
     }
@@ -1589,8 +1603,6 @@ symtab_from_filename (char **argptr, char *p, int is_quote_enclosed,
   file_symtab = lookup_symtab (copy);
   if (file_symtab == 0)
     {
-      if (!have_full_symbols () && !have_partial_symbols ())
-	error ("No symbol table is loaded.  Use the \"file\" command.");
       if (not_found_ptr)
 	{
 	  *not_found_ptr = 1;
@@ -1603,7 +1615,10 @@ symtab_from_filename (char **argptr, char *p, int is_quote_enclosed,
 	     that have not yet been loaded.  */
 	  error_silent ("No source file named %s.", copy);
 	}
-      error ("No source file named %s.", copy);
+      else if (!have_full_symbols () && !have_partial_symbols ())	
+	error ("No symbol table is loaded.  Use the \"file\" command.");
+      else
+	error ("No source file named %s.", copy);
     }
 
   /* Discard the file name from the arg.  */
@@ -1863,7 +1878,12 @@ decode_variable (char *copy, int funfirstline, char ***canonical,
 
   if (!have_full_symbols () &&
       !have_partial_symbols () && !have_minimal_symbols ())
-    error ("No symbol table is loaded.  Use the \"file\" command.");
+    {
+      /* APPLE LOCAL: This is properly a "file not found" error as well.  */
+      if (not_found_ptr)
+	*not_found_ptr = 1;
+      error ("No symbol table is loaded.  Use the \"file\" command.");
+    }
 
   if (metrowerks_ignore_breakpoint_errors_flag)
     {

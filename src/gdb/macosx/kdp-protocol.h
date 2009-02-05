@@ -36,7 +36,10 @@ typedef enum kdp_req_t {
  KDP_REGIONS,
 
  /* reattach to a connected host */
- KDP_REATTACH
+ KDP_REATTACH,
+
+ /* remote reboot request */
+ KDP_HOSTREBOOT
 } kdp_req_t;
 
 /* Common KDP packet header */
@@ -83,10 +86,18 @@ typedef struct {
   kdp_hdr_t hdr;
 } kdp_disconnect_reply_t;
 
+/* KDP_REATTACH */
+
 typedef struct {
   kdp_hdr_t hdr;
   unsigned short req_reply_port; /* udp port which to send replies */
 } kdp_reattach_req_t;
+
+/* KDP_HOSTREBOOT */
+
+typedef struct {
+  kdp_hdr_t hdr;
+} kdp_hostreboot_req_t;
 
 /* KDP_HOSTINFO */
 
@@ -343,6 +354,7 @@ typedef union kdp_pkt_t {
   kdp_regions_req_t regions_req;
   kdp_regions_reply_t regions_reply;
   kdp_reattach_req_t reattach_req;
+  kdp_hostreboot_req_t hostreboot_req;
 } kdp_pkt_t;
 
 typedef enum {

@@ -1733,45 +1733,46 @@ make_cleanup_restrict_to_objfile (struct objfile *objfile)
   return make_cleanup (do_cleanup_restrict_to_objfile, (void *) data);
 }
 
-/* Check whether the OBJFILE matches NAME.  The matches are
-   either full match, or basename match, or full match up to
-   the trailing .sym on the objfile name.  */
+/* Check whether the OBJFILE matches NAME.  We want to match either the
+   full name, or the base name.  We also want to handle the case where
+   OBJFILE comes from a cached symfile.  In that case, the OBJFILE name
+   will be the cached symfile name, but the real shlib name will be in
+   the OBFD for the OBJFILE.  So in the case of a cached symfile
+   we match against the bfd name instead.  */
 
 #define CACHED_SYM_SUFFIX ".syms"
 int
 objfile_matches_name (struct objfile *objfile, char *name)
 {
   const char *filename;
-  int len, has_suffix = 0;
+  int len; 
   static int suffixlen = strlen (CACHED_SYM_SUFFIX);
-
+  const char *real_name;
+  
   if (objfile->name == NULL)
     return 0;
-
-  if (strcmp (objfile->name, name) == 0)
-    return 1;
-
+  
+  /* See if this is a cached symfile, in which case we use the bfd name
+     if it exists.  */
   len = strlen (objfile->name);
-  if (len > suffixlen
-      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0)
+  if (len > suffixlen 
+      && strcmp (objfile->name + len - suffixlen, CACHED_SYM_SUFFIX) == 0
+      && objfile->obfd != NULL && objfile->obfd->filename != NULL)
     {
-      has_suffix = 1;
-      if (strncmp (objfile->name, name, len - suffixlen) == 0)
-        return 1;
+      real_name = objfile->obfd->filename;
     }
-
-  filename = lbasename (objfile->name);
+  else
+    real_name = objfile->name;
+  
+  if (strcmp (real_name, name) == 0)
+    return 1;
+  
+  filename = lbasename (real_name);
   if (filename == NULL)
     return 0;
-
+  
   if (strcmp (filename, name) == 0)
     return 1;
-  if (has_suffix)
-    {
-      len = strlen (filename);
-      if (len > suffixlen && strncmp (filename, name, len - suffixlen) == 0)
-        return 1;
-    }
 
   return 0;
 }
@@ -1852,6 +1853,50 @@ objfile_get_next (struct objfile *in_objfile)
 
   return objfile;
 }
+
+/* APPLE LOCAL set load state  */
+
+/* FIXME: How to make this stuff platform independent???  
+   Right now I just have a lame #ifdef NM_NEXTSTEP.  I think
+   the long term plan is to move the shared library handling
+   into the architecture vector.  At that point,
+   dyld_objfile_set_load_state should go there.  */
+
+int
+objfile_set_load_state (struct objfile *o, int load_state)
+{
+  /* FIXME: For now, we are not going to REDUCE the load state.  That is
+     because we can't track which varobj's would need to get reconstructed
+     if we were to change the state.  The only other option would be to
+     throw away all the varobj's and that seems wasteful.  */
+
+  if (o->symflags >= load_state)
+    return 1;
+
+#ifdef NM_NEXTSTEP
+  extern int dyld_objfile_set_load_state (struct objfile *, int);
+
+  return dyld_objfile_set_load_state (o, load_state);
+#else
+  return 1;
+#endif
+}
+int
+pc_set_load_state (CORE_ADDR pc, int load_state)
+{
+  struct obj_section *s;
+  s = find_pc_section (pc);
+  if (s == NULL)
+    return 0;
+
+  if (s->objfile == NULL)
+    return 0;
+
+  return objfile_set_load_state (s->objfile, load_state);
+  
+}
+
+/* END APPLE LOCAL set_load_state  */
 
 /* APPLE LOCAL begin fix-and-continue */
 

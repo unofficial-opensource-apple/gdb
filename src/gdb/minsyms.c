@@ -278,6 +278,7 @@ lookup_minimal_symbol_text (const char *name, struct objfile *objf)
 
   unsigned int hash = msymbol_hash (name) % MINIMAL_SYMBOL_HASH_SIZE;
 
+#if 0  /* APPLE LOCAL - dunno what this is for, it doesn't compile... */
 #ifdef SOFUN_ADDRESS_MAYBE_MISSING
   if (sfile != NULL)
     {
@@ -285,6 +286,7 @@ lookup_minimal_symbol_text (const char *name, struct objfile *objf)
       if (p != NULL)
 	sfile = p + 1;
     }
+#endif
 #endif
 
   for (objfile = objfile_get_first ();
@@ -410,8 +412,8 @@ lookup_minimal_symbol_by_pc_section_from_objfile
      this function often gets called in a loop, or with the ordered_sections
      lookup after we had already determined that the pc WAS in some section,
      I removed that call, and now require the caller to do that check.  See
-     for instance the use in lookup_minimal_symbol_by_pc_section (which is in
-     fact at present this functions only use.)  JCI 07/22/2003  */
+     for instance the use in lookup_minimal_symbol_by_pc_section (which is, in
+     fact, at present this function's only use.)  JCI 07/22/2003  */
 
 #if 0
   pc_section = find_pc_section (pc);
@@ -436,7 +438,7 @@ lookup_minimal_symbol_by_pc_section_from_objfile
          or equal to the desired pc value, we accomplish two things:
          (1) the case where the pc value is larger than any minimal
          symbol address is trivially solved, (2) the address associated
-         with the hi index is always the one we want when the interation
+         with the hi index is always the one we want when the iteration
          terminates.  In essence, we are iterating the test interval
          down until the pc value is pushed out of it from the high end.
 

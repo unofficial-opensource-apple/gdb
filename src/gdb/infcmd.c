@@ -99,7 +99,7 @@ static void environment_info (char *, int);
 
 static void program_info (char *, int);
 
-static void pid_info (char *, int);
+void pid_info (char *, int);
 
 static void finish_command (char *, int);
 
@@ -1410,7 +1410,7 @@ program_info (char *args, int from_tty)
 
 /* APPLE LOCAL: A command to get the inferior's process ID, useful for
    an IDE in some circumstances.  So pid_info() was added.  */
-static void
+void
 pid_info (char *args, int from_tty)
 {
   if (!target_has_execution)
@@ -1681,12 +1681,8 @@ default_print_registers_info (struct gdbarch *gdbarch,
 		     file, 'x', 1, 0, Val_pretty_default);
           /* Also print it according to its natural format.  */
 	  fprintf_filtered (file, "\t");
-	  if (TYPE_VECTOR (register_type (current_gdbarch, i)) == 0)
-	    {
-	      fprintf_filtered (file, "\t");
-	      val_print (register_type (current_gdbarch, i), virtual_buffer, 0, 0,
-			 file, 0, 1, 0, Val_pretty_default);
-	    }
+	  val_print (register_type (current_gdbarch, i), virtual_buffer, 0, 0,
+		     file, 0, 1, 0, Val_pretty_default);
 	}
 
       fprintf_filtered (file, "\n");

@@ -16,4 +16,8 @@ kdp_return_t kdp_connect (kdp_connection *c);
 
 kdp_return_t kdp_disconnect (kdp_connection *c);
 
+kdp_return_t kdp_hostreboot (kdp_connection *c);
+
+kdp_return_t kdp_reattach (kdp_connection *c);
+
 #endif /* __GDB_KDP_TRANSACTIONS_H__ */

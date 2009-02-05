@@ -209,7 +209,7 @@ kdp_return_t kdp_transaction
     }
 
     if (rtn == RR_RECV_TIMEOUT) {
-      c->logger (KDP_LOG_INFO, "kdp_transaction (%s): transation timed out\n", name);
+      c->logger (KDP_LOG_INFO, "kdp_transaction (%s): transaction timed out\n", name);
       c->logger (KDP_LOG_INFO, "kdp_transaction (%s): re-sending transaction\n", name);
       continue;
     }
@@ -296,6 +296,39 @@ kdp_return_t kdp_disconnect (kdp_connection *c)
 
   c->request->disconnect_req.hdr.request = KDP_DISCONNECT;
   ret = kdp_transaction (c, c->request, c->response, "kdp_disconnect");
+
+  if (ret != RR_SUCCESS) { return ret; }
+  c->connected = 0;
+
+  return RR_SUCCESS;
+}
+
+kdp_return_t kdp_reattach (kdp_connection *c)
+{
+  kdp_return_t ret; 
+
+  CHECK_FATAL (! kdp_is_connected (c));
+
+  c->request->reattach_req.hdr.request = KDP_REATTACH;
+  c->request->reattach_req.req_reply_port = c->reqport;
+
+  ret = kdp_transaction (c, c->request, c->response, "kdp_reattach");
+
+  if (ret != RR_SUCCESS) { return ret; }
+  c->connected = 0;
+
+  return RR_SUCCESS;
+}
+
+kdp_return_t kdp_hostreboot (kdp_connection *c)
+{
+  kdp_return_t ret; 
+
+  CHECK_FATAL (kdp_is_connected (c));
+
+  c->request->hostreboot_req.hdr.request = KDP_HOSTREBOOT;
+
+  ret = kdp_transaction (c, c->request, c->response, "kdp_hostreboot");
 
   if (ret != RR_SUCCESS) { return ret; }
   c->connected = 0;

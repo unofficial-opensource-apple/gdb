@@ -443,6 +443,7 @@ extern void set_demangling_style (char *);
 
 extern CORE_ADDR decode_fix_and_continue_trampoline (CORE_ADDR);
 extern void update_picbase_register (struct symbol *);
+extern void fix_command_1 (const char *, const char *, const char *, const char *);
 
 /* From tm.h */
 

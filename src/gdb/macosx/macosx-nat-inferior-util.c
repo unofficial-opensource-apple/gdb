@@ -218,6 +218,12 @@ macosx_inferior_suspend_ptrace (macosx_inferior_status *s)
 {
   struct target_waitstatus status;
 
+  /* Probably not necessary to set this here, but just to be
+     careful.  We set it when we handle events and when we
+     init the execution control status.  */
+
+  status.code = -1;
+
   CHECK (s != NULL);
   CHECK (s->attached_in_ptrace);
   CHECK (macosx_inferior_valid (s));

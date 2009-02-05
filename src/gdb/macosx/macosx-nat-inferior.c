@@ -51,6 +51,7 @@
 #include "event-top.h"
 #include "event-loop.h"
 #include "inf-loop.h"
+#include "gdb_stat.h"
 
 #include "bfd.h"
 
@@ -65,6 +66,10 @@
 #include <sys/param.h>
 #include <sys/sysctl.h>
 #include <mach/mach_error.h>
+#if defined (LIBXML2_IS_USABLE)
+#include <libxml/parser.h>
+#include <libxml/tree.h>
+#endif
 
 #ifndef EXC_SOFT_SIGNAL
 #define EXC_SOFT_SIGNAL 0
@@ -192,6 +197,12 @@ static int macosx_child_thread_alive (ptid_t tpid);
 static void macosx_set_auto_start_dyld (char *args, int from_tty, 
 				      struct cmd_list_element *c);
 
+static const char * get_bundle_executable_from_plist (const char *pathname);
+
+#if defined (LIBXML2_IS_USABLE)
+static const char * find_executable_name_in_xml_tree (xmlNode *a_node);
+#endif
+
 static void 
 macosx_handle_signal (macosx_signal_thread_message *msg, 
 		    struct target_waitstatus *status)
@@ -291,6 +302,9 @@ macosx_handle_exception (macosx_exception_thread_message *msg,
     {
     case EXC_BAD_ACCESS:
       status->value.sig = TARGET_EXC_BAD_ACCESS;
+      /* Preserve the exception data so we can print it later.  */
+      status->code = msg->exception_data[0];
+      status->address = (CORE_ADDR) msg->exception_data[1];
       break;
     case EXC_BAD_INSTRUCTION:
       status->value.sig = TARGET_EXC_BAD_INSTRUCTION;
@@ -503,6 +517,10 @@ static int
 macosx_service_event (enum macosx_source_type source,
 		      unsigned char *buf, struct target_waitstatus *status)
 {
+  /* We are using code not equal to -1 to signal we have extra goodies that
+     the upper level code might want to print.  */
+  status->code = -1;
+
   if (source == NEXT_SOURCE_EXCEPTION)
     {
       macosx_exception_thread_message *msg = (macosx_exception_thread_message *) buf;
@@ -652,6 +670,8 @@ macosx_child_resume (ptid_t ptid, int step, enum target_signal signal)
   int stop_others = 1;
   int pid;
   thread_t thread;
+
+  status.code = -1;
 
   if (ptid_equal (ptid, minus_one_ptid))
     {
@@ -1401,6 +1421,13 @@ void update_command (char *args, int from_tty)
   reinit_frame_cache ();
 }
 
+void stack_flush_command (char *args, int from_tty)
+{
+  reinit_frame_cache ();
+  if (from_tty)
+    printf_filtered ("Stack cache flushed.\n");
+}
+
 void macosx_create_inferior_for_task
 (struct macosx_inferior_status *inferior, task_t task, int pid)
 {
@@ -1768,12 +1795,22 @@ macosx_get_current_exception_event ()
   return exception_event;
 }
 
+/* Given a pathname to an application bundle 
+   ("/Developer/Examples/AppKit/Sketch/build/Sketch.app")
+   find the full pathname to the executable inside the bundle.  
+
+   We can find it by looking at the Contents/Info.plist or we
+   can fall back on the old reliable 
+     Sketch.app -> Sketch/Contents/MacOS/Sketch
+   rule of thumb.  */
+
 char *
 macosx_filename_in_bundle (const char *filename, int mainline)
 {
-  char *wrapper_name, *wrapped_filename, *app_str;
+  const char *wrapper_name, *app_str, *wrapper_name_from_plist;
+  char *full_pathname;
   int filename_len = strlen (filename);
-  int wrapper_name_len, wrapped_filename_len;
+  int wrapper_name_len, full_pathname_len;
   int has_final_slash = 0;
   
   /* FIXME: For now, only do apps, if somebody has more energy
@@ -1817,19 +1854,129 @@ macosx_filename_in_bundle (const char *filename, int mainline)
       wrapper_name_len = strlen (wrapper_name) - has_final_slash;
     }
   
-  wrapped_filename_len = filename_len + (1 - has_final_slash) + strlen ("Contents/MacOS/")
-    + wrapper_name_len + 1;
-  wrapped_filename = xmalloc (wrapped_filename_len);
-  memcpy (wrapped_filename, filename, filename_len + 1);
-  if (has_final_slash)
-    wrapped_filename = strcat (wrapped_filename, "Contents/MacOS/");
-  else
-    wrapped_filename = strcat (wrapped_filename, "/Contents/MacOS/");
-  
-  wrapped_filename = strncat (wrapped_filename, wrapper_name, wrapper_name_len);
+  /* Copy everything over everything up to the Contents/ directory . */
+  /* I know it seems silly to add /Contents/ up here but I wanted to
+     isolate the lameish "is there a / at the end of the string or not
+     logic up here.  */
 
-  return wrapped_filename;
+  full_pathname_len = filename_len + (1 - has_final_slash) + 
+                      strlen ("Contents") + 1;
+  full_pathname = xmalloc (full_pathname_len);
+  memcpy (full_pathname, filename, filename_len + 1);
+  if (has_final_slash)
+    strcat (full_pathname, "Contents");
+  else
+    strcat (full_pathname, "/Contents");
+
+  wrapper_name_from_plist = get_bundle_executable_from_plist (full_pathname);
+
+  /* Now copy on '/MacOS/EXECUTABLENAME' where we use either a name from the
+     plist or a name identical to the .app bundle directory name. */
+  
+  if (wrapper_name_from_plist != NULL)
+    {
+      full_pathname = xrealloc (full_pathname, full_pathname_len + 
+                                strlen ("/MacOS/") + 
+                                strlen (wrapper_name_from_plist));
+      strcat (full_pathname, "/MacOS/");
+      strcat (full_pathname, wrapper_name_from_plist);
+      /* not xfree() - this memory malloc'ed by libxml2. */
+      free ((char *)wrapper_name_from_plist);  
+    }
+  else
+    {
+      full_pathname = xrealloc (full_pathname, full_pathname_len + 
+                                strlen ("/MacOS/") + strlen (wrapper_name));
+      strcat (full_pathname, "/MacOS/");
+      strncat (full_pathname, wrapper_name, wrapper_name_len);
+    }
+
+  return full_pathname;
 }
+
+/* Find an app bundle Info.plist XML file and use libxml2 to parse it. */
+/* The string returned (NULL if unsuccessful) has been malloc()'ed by
+   libxml2, so free() it, don't xfree() or xmfree() it.  */
+
+static const char *
+get_bundle_executable_from_plist (const char *pathname)
+{
+#if !defined (LIBXML2_IS_USABLE)
+  return NULL;
+#else
+  xmlDoc *doc = NULL;
+  xmlNode *root_element = NULL;
+  char *info_plist_name;
+  const char *exe_name = NULL;
+  struct stat s;
+
+  LIBXML_TEST_VERSION
+
+  info_plist_name = xmalloc (strlen (pathname) + strlen ("/Info.plist") + 1);
+  strcpy (info_plist_name, pathname);
+  strcat (info_plist_name, "/Info.plist");
+
+  if (stat (info_plist_name, &s) != 0)
+    return NULL;
+
+  doc = xmlParseFile (info_plist_name);
+
+  xfree (info_plist_name);
+  if (doc == NULL)
+    return NULL;
+
+  root_element = xmlDocGetRootElement (doc);
+  if (root_element != NULL)
+    exe_name = find_executable_name_in_xml_tree (root_element);
+
+  xmlFreeDoc (doc);
+  xmlCleanupParser ();
+
+  return exe_name;
+#endif
+}
+
+/* Step through a libxml2 XML tree to find a CFBundleExecutable
+   key/value pair indicating the name of the executable in an
+   application bundle.  It'd be nice if there were a higher
+   level way of doing this but I don't want to add any 
+   dependencies on Foundation-like things.. */
+
+#if defined (LIBXML2_IS_USABLE)
+static const char *
+find_executable_name_in_xml_tree (xmlNode *a_node)
+{
+  xmlNode *cur_node = NULL;
+  int just_saw_CFBundleExecutable = 0;
+  const char *ret;
+
+  for (cur_node = a_node; cur_node; cur_node = cur_node->next)
+    {
+      if (cur_node->type == XML_ELEMENT_NODE && cur_node->name)
+        {
+          xmlChar *contents = xmlNodeGetContent (cur_node);
+          if (strcmp (cur_node->name, "key") == 0
+              && strcmp (contents, "CFBundleExecutable") == 0)
+            {
+              just_saw_CFBundleExecutable = 1;
+              continue;
+            }
+          if (strcmp (cur_node->name, "string") == 0
+              && just_saw_CFBundleExecutable == 1)
+            {
+              return (const char *) contents;
+            }
+          just_saw_CFBundleExecutable = 0;
+        }
+      ret = find_executable_name_in_xml_tree (cur_node->children);
+      if (ret != NULL)
+        return ret;
+    }
+  return (NULL);
+}
+#endif
+
+
 
 char *unsafe_functions[] = {
   "malloc",
@@ -1881,6 +2028,26 @@ macosx_check_safe_call ()
     }
 
   return 1;
+}
+
+void
+macosx_print_extra_stop_info (int code, CORE_ADDR address)
+{
+  ui_out_text (uiout, "Reason: ");
+  switch (code)
+    {
+    case KERN_PROTECTION_FAILURE:
+      ui_out_field_string (uiout, "access-reason", "KERN_PROTECTION_FAILURE");
+      break;
+    case KERN_INVALID_ADDRESS:
+      ui_out_field_string (uiout, "access-reason", "KERN_INVALID_ADDRESS");
+      break;
+    default:
+      ui_out_field_int (uiout, "access-reason", code);
+    }
+  ui_out_text (uiout, " at address: ");
+  ui_out_field_core_addr (uiout, "address", address);
+  ui_out_text (uiout, "\n");
 }
 
 void 
@@ -1990,6 +2157,11 @@ _initialize_macosx_inferior ()
 		     &setlist);
   add_show_from_set (cmd, &showlist);
 #endif /* WITH_CFM */
+
+  add_com ("flushstack", class_maintenance, stack_flush_command,
+	   "Force gdb to flush its stack-frame cache (maintainer command)");
+
+  add_com_alias ("flush", "flushregs", class_maintenance, 1);
 
   add_com ("update", class_obscure, update_command,
 	   "Re-read current state information from inferior.");

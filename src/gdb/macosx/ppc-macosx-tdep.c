@@ -25,7 +25,6 @@
 #include "ppc-macosx-regnums.h"
 #include "ppc-macosx-tdep.h"
 #include "ppc-macosx-frameinfo.h"
-#include "ppc-macosx-frameops.h"
 
 #include "defs.h"
 #include "frame.h"
@@ -52,6 +51,11 @@
 #include "ppc-tdep.h"
 #include "gdbarch.h"
 #include "osabi.h"
+
+#include <mach/mach.h>
+#include <mach/mach_host.h>
+#include <mach/host_info.h>
+#include <mach/machine.h>
 
 extern int backtrace_past_main;
 
@@ -105,6 +109,9 @@ static unsigned int ppc_max_frame_size = UINT_MAX;
 static void ppc_macosx_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch);
 
 static void ppc_macosx_init_abi_64 (struct gdbarch_info info, struct gdbarch *gdbarch);
+
+static int ppc_macosx_get_longjmp_target (CORE_ADDR *pc);
+static int ppc_64_macosx_get_longjmp_target (CORE_ADDR *pc);
 
 void ppc_debug (const char *fmt, ...)
 {
@@ -230,7 +237,7 @@ ppc_frame_find_prev_pc (struct frame_info *next_frame, void **this_cache)
     {
       return read_memory_unsigned_integer (prev + props->lr_offset, gdbarch_addr_bit (current_gdbarch) / 8);
     }
-  else if ((props->lr_reg > 0) &&
+  else if ((props->lr_reg >= 0) &&
 	   (props->lr_invalid) &&
 	   (frame_pc_unwind (next_frame) > props->lr_invalid) &&
 	   (frame_pc_unwind (next_frame) <= props->lr_valid_again))
@@ -472,16 +479,9 @@ ppc_frame_this_id (struct frame_info *next_frame, void **this_cache,
       *this_id = null_frame_id;
       return;
     }
-  else if (TARGET_PTR_BIT == 32)
+  else 
     {
-      /* FIXME: We should change safe_read_memory_unsigned_integer to pass a
-       ULONGEST, but when I just do this formally, I get lots of failures.
-       So for now, mark a frame with a frame pointer of 0 as invalid for
-       32 bit inferiors.  The 64 bit case will look lame (will have a spurious
-       frame at the end of the backtrace with a PC of 0x0), but it will get
-       lost in the crowd...  */
-
-      unsigned long prev_frame_addr;
+      ULONGEST prev_frame_addr = 0;
       if (safe_read_memory_unsigned_integer (cache->stack, TARGET_PTR_BIT / 8, &prev_frame_addr))
         {
           if (safe_read_memory_unsigned_integer (prev_frame_addr, TARGET_PTR_BIT / 8,
@@ -686,6 +686,15 @@ ppc_fetch_pointer_argument (struct frame_info *frame, int argi,
   return addr;
 }
 
+static CORE_ADDR
+ppc_integer_to_address (struct type *type, void *buf)
+{
+  char *tmp = alloca (TYPE_LENGTH (builtin_type_void_data_ptr));
+  LONGEST val = unpack_long (type, buf);
+  store_unsigned_integer (tmp, TYPE_LENGTH (builtin_type_void_data_ptr), val);
+  return extract_unsigned_integer (tmp,
+				   TYPE_LENGTH (builtin_type_void_data_ptr));
+}
 
 static struct gdbarch *
 ppc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
@@ -776,10 +785,12 @@ ppc_gdbarch_init (struct gdbarch_info info, struct gdbarch_list *arches)
   frame_unwind_append_sniffer (gdbarch, ppc_sigtramp_frame_sniffer);
   frame_unwind_append_sniffer (gdbarch, ppc_frame_sniffer);
 
+  set_gdbarch_integer_to_address (gdbarch, ppc_integer_to_address);
+
   set_gdbarch_fetch_pointer_argument (gdbarch, ppc_fetch_pointer_argument);
 
   set_gdbarch_deprecated_print_extra_frame_info (gdbarch, ppc_print_extra_frame_info);
-
+  
   /* Hook in ABI-specific overrides, if they have been registered.  */
   gdbarch_init_osabi (info, gdbarch);
 
@@ -819,8 +830,8 @@ ppc_fast_show_stack (int show_frames, int get_names,
   struct frame_info *fi = NULL;
   int i = 0;
   int err = 0;
-  unsigned long next_fp;
-  unsigned long pc;
+  ULONGEST next_fp = 0;
+  ULONGEST pc = 0;
 
   if (sigtramp_start == 0) 
     {
@@ -850,7 +861,6 @@ ppc_fast_show_stack (int show_frames, int get_names,
     ui_out_begin (uiout, ui_out_type_list, "frames");
   
   i = 0;
-
   if (i >= count_limit)
     goto ppc_count_finish;
 
@@ -860,26 +870,31 @@ ppc_fast_show_stack (int show_frames, int get_names,
       err = 1;
       goto ppc_count_finish;
     }
+
   if (show_frames && print_fun && (i < print_limit))
     print_fun (uiout, i, get_frame_pc (fi), get_frame_base (fi));
-  i++;
-
-  if (i >= count_limit)
-    goto ppc_count_finish;
-
-  fi = get_prev_frame (fi);
-  if (fi == NULL)
-    goto ppc_count_finish;
-
-  pc = get_frame_pc (fi);
-  fp = get_frame_base (fi);
-
-  if (show_frames && print_fun && (i < print_limit))
-    print_fun (uiout, i, pc, fp);
-  i++;
+  i = 1;
   
-  if (!backtrace_past_main && inside_main_func (pc))
-    goto ppc_count_finish;
+  do 
+    {
+      if (i >= count_limit)
+	goto ppc_count_finish;
+
+      fi = get_prev_frame (fi);
+      if (fi == NULL)
+	goto ppc_count_finish;
+
+      pc = get_frame_pc (fi);
+      fp = get_frame_base (fi);
+      
+      if (show_frames && print_fun && (i < print_limit))
+	print_fun (uiout, i, pc, fp);
+      
+      i++;
+
+      if (!backtrace_past_main && inside_main_func (pc))
+	goto ppc_count_finish;
+    } while (i < 5);
 
   if (! safe_read_memory_unsigned_integer (fp, 4, &next_fp))
     goto ppc_count_finish;
@@ -993,7 +1008,7 @@ ppc_throw_catch_find_typeinfo (struct frame_info *curr_frame, int exception_type
 	 FIXME: we need to get the runtime to keep this so we aren't relying on
 	 the particular layout of the __cxa_exception... 
          Anyway, then the first field of __cxa_exception is the type object. */
-      unsigned long type_obj_addr;
+      ULONGEST type_obj_addr = 0;
 
       frame_unwind_unsigned_register (curr_frame, PPC_MACOSX_FIRST_GP_REGNUM + 3, &typeinfo_ptr);
       
@@ -1017,6 +1032,7 @@ ppc_throw_catch_find_typeinfo (struct frame_info *curr_frame, int exception_type
 static void
 ppc_macosx_init_abi (struct gdbarch_info info, struct gdbarch *gdbarch)
 {
+  set_gdbarch_get_longjmp_target (gdbarch, ppc_macosx_get_longjmp_target);
 }
 
 static void
@@ -1038,6 +1054,20 @@ ppc_macosx_init_abi_64 (struct gdbarch_info info, struct gdbarch *gdbarch)
 
   set_gdbarch_push_dummy_call (gdbarch, ppc64_darwin_abi_push_dummy_call);
   set_gdbarch_return_value (gdbarch, ppc64_darwin_abi_return_value);
+
+  set_gdbarch_get_longjmp_target (gdbarch, ppc_64_macosx_get_longjmp_target);
+}
+
+static int
+ppc_mach_o_query_64bit ()
+{
+  host_basic_info_data_t info;
+  mach_msg_type_number_t count;
+
+  count = HOST_BASIC_INFO_COUNT;
+  host_info (mach_host_self (), HOST_BASIC_INFO, (host_info_t) &info, &count);
+
+  return ((info.cpu_type == CPU_TYPE_POWERPC) && (info.cpu_subtype == CPU_SUBTYPE_POWERPC_970));
 }
 
 static enum gdb_osabi
@@ -1051,7 +1081,7 @@ ppc_mach_o_osabi_sniffer (bfd *abfd)
       bfd *nbfd = NULL;
       for (;;)
 	{
-	  nbfd = bfd_openr_next_archived_file (abfd, abfd);
+	  nbfd = bfd_openr_next_archived_file (abfd, nbfd);
 
 	  if (nbfd == NULL)
 	    break;
@@ -1059,7 +1089,7 @@ ppc_mach_o_osabi_sniffer (bfd *abfd)
 	    continue;
 	  
 	  cur = ppc_mach_o_osabi_sniffer (nbfd);
-	  if ((cur == GDB_OSABI_DARWIN64) && (best != GDB_OSABI_DARWIN64))
+	  if ((cur == GDB_OSABI_DARWIN64) && (best != GDB_OSABI_DARWIN64) && (ppc_mach_o_query_64bit ()))
 	    best = cur;
 	  if ((cur == GDB_OSABI_DARWIN) && (best != GDB_OSABI_DARWIN64) && (best != GDB_OSABI_DARWIN))
 	    best = cur;
@@ -1084,6 +1114,42 @@ ppc_mach_o_osabi_sniffer (bfd *abfd)
   return GDB_OSABI_UNKNOWN;
 }
 
+#define PPC_JMP_LR 0x54
+#define PPC_64_JMP_LR 0xa8
+
+static int
+ppc_macosx_get_longjmp_target_helper (unsigned int offset, CORE_ADDR *pc)
+{  
+  CORE_ADDR jmp_buf;
+  ULONGEST long_addr = 0;
+
+  /* The first argument to longjmp (in $r3) is the pointer to the 
+     jump buf.  The stored lr there is offset by PPC_JMP_LR as
+     given above.  */
+
+  jmp_buf = read_register (PPC_MACOSX_FIRST_GP_REGNUM + 3);
+
+  if (safe_read_memory_unsigned_integer (jmp_buf + offset, TARGET_PTR_BIT/8, &long_addr))
+    {
+      *pc = long_addr;
+      return 1;
+    }
+  else
+    return 0;
+}
+
+static int
+ppc_64_macosx_get_longjmp_target (CORE_ADDR *pc)
+{
+  return ppc_macosx_get_longjmp_target_helper (PPC_64_JMP_LR, pc);
+}
+
+static int
+ppc_macosx_get_longjmp_target (CORE_ADDR *pc)
+{
+  return ppc_macosx_get_longjmp_target_helper (PPC_JMP_LR, pc);
+}
+
 void
 _initialize_ppc_tdep ()
 {
@@ -1091,7 +1157,7 @@ _initialize_ppc_tdep ()
 
   register_gdbarch_init (bfd_arch_powerpc, ppc_gdbarch_init);
 
-  gdbarch_register_osabi_sniffer (bfd_arch_powerpc, bfd_target_mach_o_flavour,
+  gdbarch_register_osabi_sniffer (bfd_arch_unknown, bfd_target_mach_o_flavour,
 				  ppc_mach_o_osabi_sniffer);
 
   gdbarch_register_osabi (bfd_arch_powerpc, 0, GDB_OSABI_DARWIN,

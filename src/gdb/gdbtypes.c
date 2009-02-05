@@ -1727,7 +1727,9 @@ check_stub_method_group (struct type *type, int method_id)
     }
 }
 
-const struct cplus_struct_type cplus_struct_default;
+/* APPLE LOCAL: Not const because we assign random
+   junk to it via the NONULL macros over in gdbtypes.h */
+struct cplus_struct_type cplus_struct_default;
 
 void
 allocate_cplus_struct_type (struct type *type)

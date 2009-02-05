@@ -21,8 +21,6 @@
    Foundation, Inc., 59 Temple Place - Suite 330,
    Boston, MA 02111-1307, USA.  */
 
-#if 0
-
 #include "defs.h"
 #include "symtab.h"
 #include "gdbtypes.h"
@@ -36,13 +34,15 @@
 #include "stabsread.h"
 #include "gdbcmd.h"
 #include "complaints.h"
+#include "block.h"
+#include "dictionary.h"
+
+#include "readline/tilde.h"
 
 #include "xsym.h"
 
 #include <string.h>
 #include <stdio.h>
-
-#ifndef __i386__
 
 struct type *sym_builtin_type_pstr;
 struct type *sym_builtin_type_cstr;
@@ -266,7 +266,7 @@ int sym_parse_type
     if ((ret < 0) || (type == NULL)) { sym_complaint (); break; }
 
     name = bfd_sym_symbol_name (objfile->obfd, value);
-    typename = (char *) obstack_alloc (&objfile->symbol_obstack, name[0] + 1);
+    typename = (char *) obstack_alloc (&objfile->objfile_obstack, name[0] + 1);
 
     sprintf (typename, "%.*s", name[0], name + 1);
     break;
@@ -356,11 +356,11 @@ static void sym_read_type
   typename = bfd_sym_symbol_name (objfile->obfd, entry.nte_index);
 
   if (typename[0] > 0) {
-    ntypename = (char *) obstack_alloc (&objfile->symbol_obstack, typename[0] + 1);
+    ntypename = (char *) obstack_alloc (&objfile->objfile_obstack, typename[0] + 1);
     sprintf (ntypename, "%.*s", typename[0], typename + 1);
   } else {
     if (0) {
-      ntypename = (char *) obstack_alloc (&objfile->symbol_obstack, 16);
+      ntypename = (char *) obstack_alloc (&objfile->objfile_obstack, 16);
       sprintf (ntypename, "type%lu", i);
     }
   }
@@ -374,10 +374,10 @@ static void sym_read_type
       TYPE_TAG_NAME (type) = ntypename;
     }
 
-    symbol = (struct symbol *) obstack_alloc (&objfile->symbol_obstack, sizeof (struct symbol));
+    symbol = (struct symbol *) obstack_alloc (&objfile->objfile_obstack, sizeof (struct symbol));
       
     SYMBOL_TYPE (symbol) = type;
-    SYMBOL_NAME (symbol) = ntypename;
+    SYMBOL_LINKAGE_NAME (symbol) = ntypename;
     SYMBOL_VALUE (symbol) = 0;
     SYMBOL_LANGUAGE (symbol) = 0;
     SYMBOL_SECTION (symbol) = 0;
@@ -386,8 +386,6 @@ static void sym_read_type
     SYMBOL_CLASS (symbol) = LOC_TYPEDEF;
     SYMBOL_LINE (symbol) = 0;
     SYMBOL_BASEREG (symbol) = 0;
-    SYMBOL_ALIASES (symbol) = NULL; 
-    SYMBOL_RANGES (symbol) = NULL;
   }
 
   *itype = *type;
@@ -421,8 +419,8 @@ static void sym_read_types
 
   maxtypes = sdata->header.dshb_tte.dti_object_count + 1;
 
-  typevec = obstack_alloc (&objfile->type_obstack, maxtypes * sizeof (struct type *));
-  typedefvec = obstack_alloc (&objfile->type_obstack, maxtypes * sizeof (struct symbol *));
+  typevec = obstack_alloc (&objfile->objfile_obstack, maxtypes * sizeof (struct type *));
+  typedefvec = obstack_alloc (&objfile->objfile_obstack, maxtypes * sizeof (struct symbol *));
 
   for (i = 0; i < maxtypes; i++) {
     typevec[i] = alloc_type (objfile);
@@ -508,7 +506,7 @@ static void sym_read_contained_variables
 
       if (argvec != NULL) {
 	FIELD_TYPE (argvec[nargs]) = typevec[cventry.entry.tte_index];
-	FIELD_NAME (argvec[nargs]) = (char *) obstack_alloc (&objfile->symbol_obstack, nname[0] + 1);
+	FIELD_NAME (argvec[nargs]) = (char *) obstack_alloc (&objfile->objfile_obstack, nname[0] + 1);
 	sprintf (FIELD_NAME (argvec[nargs]), "%.*s", nname[0], nname + 1);
 	FIELD_BITPOS (argvec[nargs]) = 0;
 	FIELD_BITSIZE (argvec[nargs]) = 0;
@@ -520,18 +518,16 @@ static void sym_read_contained_variables
     if ((localvec != NULL) && (globalvec != NULL)) {
 
       struct symbol *lsym = NULL;
-      lsym = (struct symbol *) obstack_alloc (&objfile->symbol_obstack, sizeof (struct symbol));
+      lsym = (struct symbol *) obstack_alloc (&objfile->objfile_obstack, sizeof (struct symbol));
 
       SYMBOL_TYPE (lsym) = typevec[cventry.entry.tte_index];
-      SYMBOL_NAME (lsym) = obstack_alloc (&objfile->symbol_obstack, nname[0] + 1);
-      sprintf (SYMBOL_NAME (lsym), "%.*s", nname[0], nname + 1);
+      SYMBOL_LINKAGE_NAME (lsym) = obstack_alloc (&objfile->objfile_obstack, nname[0] + 1);
+      sprintf (SYMBOL_LINKAGE_NAME (lsym), "%.*s", nname[0], nname + 1);
       SYMBOL_LANGUAGE (lsym) = language_cplus;
       SYMBOL_SECTION (lsym) = 0;
       SYMBOL_BFD_SECTION (lsym) = 0;
       SYMBOL_LINE (lsym) = 0;
       SYMBOL_BASEREG (lsym) = 0;
-      SYMBOL_ALIASES (lsym) = NULL; 
-      SYMBOL_RANGES (lsym) = NULL;
 
       switch (cventry.entry.address.scstruct.sca_kind) {
 
@@ -649,7 +645,7 @@ static void sym_read_functions
 
   maxfuncs = sdata->header.dshb_mte.dti_object_count + 1;
 
-  funcvec = obstack_alloc (&objfile->type_obstack, maxfuncs * sizeof (struct symbol *));
+  funcvec = obstack_alloc (&objfile->objfile_obstack, maxfuncs * sizeof (struct symbol *));
 
   for (i = 1; i < maxfuncs; i++) {
     
@@ -661,7 +657,7 @@ static void sym_read_functions
 
     struct symbol **localvec;
     unsigned long nlocals;
-
+    
     struct symbol **globalvec;
     unsigned long nglobals;
 
@@ -679,9 +675,9 @@ static void sym_read_functions
 
     sym_read_contained_variables (objfile, &entry, typevec, ntypes, NULL, &nargs, NULL, &nlocals, NULL, &nglobals);
 
-    argvec = (struct field *) obstack_alloc (&objfile->symbol_obstack, nargs * sizeof (struct field));
-    localvec = (struct symbol **) obstack_alloc (&objfile->symbol_obstack, nlocals * sizeof (struct symbol *));
-    globalvec = (struct symbol **) obstack_alloc (&objfile->symbol_obstack, nglobals * sizeof (struct symbol *));
+    argvec = (struct field *) obstack_alloc (&objfile->objfile_obstack, nargs * sizeof (struct field));
+    localvec = (struct symbol **) obstack_alloc (&objfile->objfile_obstack, nlocals * sizeof (struct symbol *));
+    globalvec = (struct symbol **) obstack_alloc (&objfile->objfile_obstack, nglobals * sizeof (struct symbol *));
 
     sym_read_contained_variables (objfile, &entry, typevec, ntypes, argvec, &nargs, localvec, &nlocals, globalvec, &nglobals);
 
@@ -692,7 +688,7 @@ static void sym_read_functions
     TYPE_CODE (ftype) = TYPE_CODE_FUNC;
 
     fblock = (struct block *) TYPE_ALLOC (ftype, (sizeof (struct block) + ((nlocals - 1) * sizeof (struct symbol *))));
-    fsymbol = (struct symbol *) obstack_alloc (&objfile->symbol_obstack, sizeof (struct symbol));
+    fsymbol = (struct symbol *) obstack_alloc (&objfile->objfile_obstack, sizeof (struct symbol));
 
     BLOCK_FUNCTION (fblock) = fsymbol;
     BLOCK_START (fblock) = entry.mte_res_offset;
@@ -703,9 +699,9 @@ static void sym_read_functions
     BLOCK_START (fblock) += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
     BLOCK_END (fblock) += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
 
-    BLOCK_NSYMS (fblock) = nlocals;
-    for (j = 0; j < nlocals; j++) {
-      BLOCK_SYM (fblock, j) = localvec[j];
+    BLOCK_DICT (fblock) = dict_create_hashed_expandable ();
+    for (i = 0; i < nlocals; j++) {
+      dict_add_symbol (BLOCK_DICT (fblock), localvec[i]);
     }
 
     TYPE_NFIELDS (ftype) = nargs;
@@ -713,11 +709,11 @@ static void sym_read_functions
 
     SYMBOL_TYPE (fsymbol) = ftype;
     name = bfd_sym_symbol_name (abfd, entry.mte_nte_index);
-    SYMBOL_NAME (fsymbol) = obstack_alloc (&objfile->symbol_obstack, name[0] + 1);
+    SYMBOL_LINKAGE_NAME (fsymbol) = obstack_alloc (&objfile->objfile_obstack, name[0] + 1);
     if ((name[0] > 0) && (name[1] == '.')) {
-      sprintf (SYMBOL_NAME (fsymbol), "%.*s", name[0] - 1, name + 2);
+      sprintf (SYMBOL_LINKAGE_NAME (fsymbol), "%.*s", name[0] - 1, name + 2);
     } else {
-      sprintf (SYMBOL_NAME (fsymbol), "%.*s", name[0], name + 1);
+      sprintf (SYMBOL_LINKAGE_NAME (fsymbol), "%.*s", name[0], name + 1);
     }
     SYMBOL_BLOCK_VALUE (fsymbol) = fblock;
     SYMBOL_LANGUAGE (fsymbol) = language_cplus;
@@ -727,8 +723,6 @@ static void sym_read_functions
     SYMBOL_CLASS (fsymbol) = LOC_BLOCK;
     SYMBOL_LINE (fsymbol) = 0;
     SYMBOL_BASEREG (fsymbol) = 0;
-    SYMBOL_ALIASES (fsymbol) = NULL; 
-    SYMBOL_RANGES (fsymbol) = NULL;
 
     funcvec[nfuncs] = fsymbol;
     nfuncs++;
@@ -754,7 +748,8 @@ static void sym_symfile_init (struct objfile *objfile)
   init_entry_point_info (objfile);
 }
 
-static void convert_path (unsigned char *dst, const unsigned char *src, size_t len)
+static void convert_path_colons
+(unsigned char *dst, const unsigned char *src, size_t len)
 {
   size_t i;
 
@@ -771,6 +766,24 @@ static void convert_path (unsigned char *dst, const unsigned char *src, size_t l
   }
 
   dst[len + 1] = '\0';
+}
+
+static void convert_path
+(unsigned char *dst, const unsigned char *src, size_t len, bfd_sym_version version)
+{
+  switch (version)
+    {
+    case BFD_SYM_VERSION_3_3R0:
+      sprintf (dst, "%.*s", (int) len, src);
+      break;
+    case BFD_SYM_VERSION_3_5:
+    case BFD_SYM_VERSION_3_4:
+    case BFD_SYM_VERSION_3_3:
+    case BFD_SYM_VERSION_3_2:
+    case BFD_SYM_VERSION_3_1:
+    default:
+      convert_path_colons (dst, src, len);
+    }
 }
 
 static void sym_symfile_read (struct objfile *objfile, int mainline)
@@ -790,6 +803,8 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
   unsigned long nfuncs;
   unsigned long maxtypes;
 
+  unsigned long i;
+
   CHECK_FATAL (objfile != NULL);
   abfd = objfile->obfd;
   CHECK_FATAL (abfd != NULL);
@@ -801,55 +816,26 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
   sym_read_types (objfile, &maxtypes, &typevec, &ntypes, &typedefvec, &ntypedefs);
   sym_read_functions (objfile, typevec, maxtypes, &funcvec, &nfuncs);
 
-  gblock = (struct block *) obstack_alloc 
-    (&objfile->symbol_obstack, (sizeof (struct block) + ((ntypedefs + nfuncs - 1) * sizeof (struct symbol *))));
+  gblock = allocate_block (&objfile->objfile_obstack);
+  BLOCK_DICT (gblock) = dict_create_hashed_expandable ();
 
-  BLOCK_NSYMS (gblock) = 0;
-  BLOCK_SYM (gblock, 0) = NULL;
-  BLOCK_FUNCTION (gblock) = NULL;
-  BLOCK_START (gblock) = 0;
-  BLOCK_END (gblock) = 0;
-  BLOCK_SUPERBLOCK (gblock) = NULL;
-  BLOCK_GCC_COMPILED (gblock) = 0;
-
-  sblock = (struct block *) obstack_alloc 
-    (&objfile->symbol_obstack, (sizeof (struct block) + (0 * sizeof (struct symbol *))));
-
-  BLOCK_NSYMS (sblock) = 0;
-  BLOCK_SYM (sblock, 0) = NULL;
-  BLOCK_FUNCTION (sblock) = NULL;
-  BLOCK_START (sblock) = 0;
-  BLOCK_END (sblock) = 0;
-  BLOCK_SUPERBLOCK (sblock) = NULL;
-  BLOCK_GCC_COMPILED (sblock) = 0;
-
+  sblock = allocate_block (&objfile->objfile_obstack);
   BLOCK_SUPERBLOCK (sblock) = gblock;
+  BLOCK_DICT (sblock) = dict_create_hashed_expandable ();
 
-  {
-    unsigned long nsymbols = ntypedefs + nfuncs;
-    unsigned long cur = 0;
-    unsigned long i;
-
-    BLOCK_NSYMS (gblock) = nsymbols;
-
-    for (i = 0; i < maxtypes; i++) {
-      if (typedefvec[i] != NULL) {
-	BLOCK_SYM (gblock, cur) = typedefvec[i];
-	cur++;
-      }
+  for (i = 0; i < maxtypes; i++) {
+    if (typedefvec[i] != NULL) {
+      dict_add_symbol (BLOCK_DICT (gblock), typedefvec[i]);
     }
-    
-    for (i = 0; i < nfuncs; i++) {
-      CHECK_FATAL (funcvec[i] != NULL);
-      BLOCK_SYM (gblock, cur) = funcvec[i];
-      cur++;
-    }
+  }
 
-    CHECK_FATAL (cur == nsymbols);
+  for (i = 0; i < nfuncs; i++) {
+    CHECK_FATAL (funcvec[i] != NULL);
+    dict_add_symbol (BLOCK_DICT (gblock), funcvec[i]);
   }
 
   bv = (struct blockvector *) obstack_alloc
-    (&objfile->symbol_obstack, (sizeof (struct blockvector) + (nfuncs + 2 - 1) * sizeof (struct block *)));
+    (&objfile->objfile_obstack, (sizeof (struct blockvector) + (nfuncs + 2 - 1) * sizeof (struct block *)));
 
   BLOCKVECTOR_NBLOCKS (bv) = nfuncs + 2;
 
@@ -947,7 +933,7 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
 	} else {
 	  namebuf = bfd_sym_symbol_name (abfd, frtentry.filename.nte_index);
 	  name = xmalloc (namebuf[0] + 1 + 1);
-	  convert_path (name, namebuf + 1, namebuf[0]);
+	  convert_path (name, namebuf + 1, namebuf[0], sdata->version);
 	}
 
 	symtab = allocate_symtab (name, objfile);
@@ -960,9 +946,12 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
 	LINETABLE (symtab) = linetable;
 	symtab->dirname = NULL;
 	symtab->free_code = free_nothing;
-	symtab->free_ptr = NULL;
+	symtab->free_func = NULL;
 	symtab->primary = 0;
-	symtab->debugformat = obsavestring ("xSYM", 4, &objfile->symbol_obstack);
+	symtab->debugformat = obsavestring ("xSYM", 4, &objfile->objfile_obstack);
+
+	/* APPLE LOCAL fix-and-continue */
+	SYMTAB_OBSOLETED (symtab) = 50;
 
 	curpos = entry.file.fref.fref_offset;
 	curitem = 0;
@@ -975,7 +964,7 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
 	ret = bfd_sym_fetch_modules_table_entry (abfd, &mtentry, entry.entry.mte_index);
 	if (ret < 0) { break; }
 	
-	curpos += entry.entry.mte_offset;
+	curpos += entry.entry.file_delta;
 
 	if (curitem >= linetable_maxentries) {
 	  sym_complaint ();
@@ -990,7 +979,7 @@ static void sym_symfile_read (struct objfile *objfile, int mainline)
 	  }
 
 	  linetable->item[curitem].line = curpos;
-	  linetable->item[curitem].pc = mtentry.mte_res_offset + entry.entry.file_delta;
+	  linetable->item[curitem].pc = mtentry.mte_res_offset + entry.entry.mte_offset;
 	  linetable->item[curitem].pc += ANOFFSET (objfile->section_offsets, SECT_OFF_TEXT (objfile));
 	  curitem++;
 	  linetable->nitems = curitem;
@@ -1017,10 +1006,10 @@ static void sym_symfile_offsets (struct objfile *objfile, struct section_addr_in
 {
   unsigned int i;
 
-  objfile->num_sections = SECT_OFF_MAX;
+  objfile->num_sections = addrs->num_sections;
   objfile->section_offsets = (struct section_offsets *)
-    obstack_alloc (&objfile->psymbol_obstack, SIZEOF_SECTION_OFFSETS);
-  memset (objfile->section_offsets, 0, SIZEOF_SECTION_OFFSETS);
+    obstack_alloc (&objfile->objfile_obstack, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
+  memset (objfile->section_offsets, 0, SIZEOF_N_SECTION_OFFSETS (objfile->num_sections));
 
   if (addrs->other[0].addr != 0)
     {
@@ -1032,7 +1021,7 @@ static void sym_symfile_offsets (struct objfile *objfile, struct section_addr_in
       objfile_add_to_ordered_sections (objfile);
     }
 
-  for (i = 0; i < MAX_SECTIONS; i++) {
+  for (i = 0; i < objfile->num_sections; i++) {
     objfile->section_offsets->offsets[i] = (long) addrs->other[0].addr;
   }
 
@@ -1151,12 +1140,9 @@ void sym_dump_command (char *args, int from_tty)
   do_cleanups (cleanups);
 }
 
-#endif
-
 void
 _initialize_symread ()
 {
-#ifndef __i386__
   sym_builtin_type_pstr = make_pointer_type (builtin_type_char, NULL);
   sym_builtin_type_cstr = make_pointer_type (builtin_type_char, NULL);
 
@@ -1164,7 +1150,4 @@ _initialize_symread ()
 
   add_com ("sym-dump", class_run, sym_dump_command,
 	   "Print the contents of the specified SYM-format symbol file.");
-#endif
 }
-
-#endif

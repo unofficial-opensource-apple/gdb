@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.  */
 #define INTERNALIZE_SYMBOL(intern, extern, abfd) \
 macosx_internalize_symbol (&intern, extern, abfd)
 
+#define SOFUN_ADDRESS_MAYBE_MISSING
 #define TEXT_SECTION_NAME "LC_SEGMENT.__TEXT.__text"
 #define COALESCED_TEXT_SECTION_NAME "LC_SEGMENT.__TEXT.__textcoal_nt"
 #define DATA_SECTION_NAME "LC_SEGMENT.__DATA.__data"

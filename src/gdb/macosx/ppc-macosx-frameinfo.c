@@ -156,7 +156,7 @@ struct read_memory_unsigned_int_args
 {
   CORE_ADDR addr;
   int len;
-  unsigned long ret_val;
+  ULONGEST ret_val;
 };
 
 int wrap_read_memory_unsigned_integer (void *in_args)
@@ -170,7 +170,7 @@ int wrap_read_memory_unsigned_integer (void *in_args)
 
 int
 safe_read_memory_unsigned_integer (CORE_ADDR addr, int len,
-				   unsigned long *val)
+				   ULONGEST *val)
 {
     struct read_memory_unsigned_int_args args;
     
@@ -203,14 +203,14 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 			 the case where instructions we don't recognize
 			 get inserted into the prologue. */
   int saw_pic_base_setup = 0;
-  int lr_reg = -1;  /* temporary cookies that we use to tell us that
+  unsigned int lr_reg = 0xffffffff;  /* temporary cookies that we use to tell us that
 		       we have seen the lr moved into a gpr. 
-		       * Set to -1 at start.  
+		       * Set to 0xffffffff at start.  
 		       * Set to the stw instruction for the register we
 		       see in the mflr.
 		       * Set to 0 when we see the lr get stored on the
 		       stack.  */
-  int cr_reg = -1;  /* Same as cr_reg but for condition reg. */
+  unsigned int cr_reg = 0xffffffff;  /* Same as lr_reg but for condition reg. */
   int offset2 = 0;  /* This seems redundant to me, but I am not going
 		       to bother to take it out right now.  */
 
@@ -226,7 +226,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 
   for (pc = start; (end == INVALID_ADDRESS) || (pc < end); 
        pc += 4, insn_count++) {
-    unsigned long op;
+    ULONGEST op = 0;
     int insn_recognized = 1;
 
     if (!safe_read_memory_unsigned_integer (pc, 4, &op))
@@ -345,7 +345,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 	      }
 	    else if (strcmp (SYMBOL_LINKAGE_NAME (msymbol), "saveFP") == 0)
 	      {
-		unsigned long store_insn;
+		ULONGEST store_insn = 0;
 		int reg;
 		
 		/* Decode the actual branch target to find the
@@ -574,7 +574,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 					      prologue, any others mean we
 					      have wandered too far afield. */
       {
-        unsigned long peekahead_op;
+        ULONGEST peekahead_op = 0;
         if (props->lr_invalid == 1
             && (end != INVALID_ADDRESS || pc + 4 < end)
             && safe_read_memory_unsigned_integer (pc + 4, 4, &peekahead_op)
@@ -697,7 +697,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 	    int cleanup_length = 6;
 
 	    if (!props->lr_saved 
-		&& props->lr_reg != -1
+		&& props->lr_reg != 0xffffffff
 		&& props->lr_invalid != 0 
 		&& props->lr_valid_again == INVALID_ADDRESS)
 	      {
@@ -711,7 +711,7 @@ ppc_parse_instructions (CORE_ADDR start, CORE_ADDR end,
 		for (; cleanup_length > 0; 
 		     pc += 4, cleanup_length--) 
 		  {
-		    unsigned long op;
+		    ULONGEST op = 0;
 		    
 		    if (!safe_read_memory_unsigned_integer (pc, 4, &op))
 		      break;
@@ -1011,8 +1011,14 @@ ppc_frame_function_boundaries (struct frame_info *next_frame, void **this_cache)
   ppc_function_boundaries_request request;
   int ret;
   
-  if (cache->boundaries_status)
+  if (cache->boundaries_status == 1)
     return bounds;
+  /* If the boundaries_status is -1 it means we didn't get the boundaries
+     right.  Don't try again, since that is no more likely to work now
+     than it did last time.  But don't return the bounds or our callers
+     might think they are good...  */
+  else if (cache->boundaries_status == -1)
+    return NULL;
   
   ppc_clear_function_boundaries (bounds);
   ppc_clear_function_boundaries_request (&request);

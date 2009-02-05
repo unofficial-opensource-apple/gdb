@@ -517,6 +517,9 @@ struct objfile
 #define OBJF_USERLOADED	(1 << 5)	/* User loaded */
 
 
+/* APPLE LOCAL: The following OBJF_SYM_ constants are used to limit
+   the scope of how much debug/symbol information we read from
+   a given objfile.  */
 
 #define OBJF_SYM_NONE 0
 #define OBJF_SYM_CONTAINER (1 << 0)
@@ -644,6 +647,11 @@ void objfile_add_to_ordered_sections (struct objfile *objfile);
 void objfile_delete_from_ordered_sections (struct objfile *objfile);
 struct obj_section *find_pc_sect_in_ordered_sections (CORE_ADDR addr, 
 					      struct bfd_section *bfd_section);
+/* APPLE LOCAL: These set the load state for the debug info based on the 
+   pc or by objfile.  */
+
+int objfile_set_load_state (struct objfile *, int);
+int pc_set_load_state (CORE_ADDR, int);
 
 /* APPLE LOCAL begin fix-and-continue */
 struct symtab *symtab_get_first (struct objfile *, int );

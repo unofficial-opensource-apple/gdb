@@ -102,6 +102,7 @@ struct breakpoint_list
   struct breakpoint *bp;
 };
 
+static int breakpoint_address_is_meaningful (struct breakpoint *);
 
 static int break_command_1 (char *, int, int, struct breakpoint *);
 
@@ -3936,7 +3937,7 @@ print_one_breakpoint (struct breakpoint *b,
       ui_out_text (uiout, "\n");
     }
   
-  if (b->cond)
+  if (b->cond || b->cond_string)
     {
       /* APPLE LOCAL: There might be an error printing the expression.
          Not sure what the best thing to do here is.  The expression
@@ -3948,14 +3949,19 @@ print_one_breakpoint (struct breakpoint *b,
          up the output.  */
       struct ui_file *prev_stderr = gdb_stderr;
       annotate_field (7);
-      ui_out_text (uiout, "\tstop only if ");
       gdb_stderr = gdb_null;
-      if (gdb_print_expression (b->cond, stb->stream))
-        ui_out_field_stream (uiout, "cond", stb);
+      if (b->cond && gdb_print_expression (b->cond, stb->stream))
+	{
+	  ui_out_text (uiout, "\tstop only if ");
+	  ui_out_field_stream (uiout, "cond", stb);
+	}
       else
         {
           if (b->cond_string)
-            ui_out_field_string (uiout, "cond", b->cond_string);
+	    {
+	      ui_out_text (uiout, "\tcondition not yet parsed: ");
+	      ui_out_field_string (uiout, "cond", b->cond_string);
+	    }
           else
             ui_out_field_string (uiout, "cond", "Error printing condition string");
         }
@@ -4208,14 +4214,16 @@ describe_other_breakpoints (CORE_ADDR pc, asection *section)
 
   ALL_BREAKPOINTS (b)
     if (b->loc->address == pc)	/* address match / overlay match */
-      if (!b->pending && (!overlay_debugging || b->loc->section == section))
+      if (!b->pending && (!overlay_debugging || b->loc->section == section)
+	  && breakpoint_address_is_meaningful (b))
 	others++;
   if (others > 0)
     {
       printf_filtered ("Note: breakpoint%s ", (others > 1) ? "s" : "");
       ALL_BREAKPOINTS (b)
 	if (b->loc->address == pc)	/* address match / overlay match */
-	  if (!b->pending && (!overlay_debugging || b->loc->section == section))
+	  if (!b->pending && (!overlay_debugging || b->loc->section == section)
+	  && breakpoint_address_is_meaningful (b))
 	    {
 	      others--;
 	      printf_filtered ("%d%s%s ",
@@ -5499,12 +5507,26 @@ parse_breakpoint_sals (char **address,
       
       if (requested_shlib != NULL)
 	{
+	  struct objfile *objfile;
 	  restrict_cleanup = make_cleanup_restrict_to_shlib (requested_shlib);
 	  if (restrict_cleanup == (void *) -1)
 	    {
 	      *not_found_ptr = 1;
-	      error_silent ("Couldn't locate shared library \"%s\" for breakpoint.", requested_shlib);
+              /* If this is a pending breakpoint, just bail on trying to set it -
+                 don't issue an error message about not finding the objfile. */
+              if (pending_break_support == AUTO_BOOLEAN_TRUE)
+                throw_exception (RETURN_ERROR);
+              else
+                error_silent ("Couldn't locate shared library \"%s\" for breakpoint.",
+                              requested_shlib);
 	    }
+	  /* Okay, we've restricted the search to the requested shlib.  Since we are
+	     trying to set breakpoints here, lets raise the load level of all the objfiles
+	     to OBJF_SYM_ALL.  For now there is only one objfile here, but I use the
+	     ALL_OBJFILES iterator in case we pass in a set some day.  */
+	  ALL_OBJFILES (objfile)
+	    objfile_set_load_state (objfile, OBJF_SYM_ALL);
+	  
 	}
       else
 	restrict_cleanup = make_cleanup (null_cleanup, NULL);
@@ -5636,7 +5658,9 @@ break_command_1 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
 		    bs = 0;
 		  
 		  arg++;
-		}	  
+		}
+	      
+	      len = arg - begin;
 	      /* Step past the quote.  */
 	      arg++;
 	    }
@@ -5645,8 +5669,9 @@ break_command_1 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
 	      begin = arg;
 	      while (!isspace (*arg) && *arg != '\0')
 		arg++;
+	      len = arg - begin;
 	    }
-	  len = arg - begin;
+
 	  requested_shlib = malloc (len + 1);
 	  strncpy (requested_shlib, begin, len);
 	  requested_shlib[len] = '\0';
@@ -5766,7 +5791,12 @@ break_command_2 (char *arg, int flag, int from_tty, struct breakpoint *pending_b
 	  if (pending_bp)
 	    return rc;
 
-	  error_output_message (NULL, err_msg);
+	  /* APPLE LOCAL: If this is a pending breakpoint, and we were given a 
+             shlib to set it in, and we can't set the breakpoint right now, 
+             don't issue any error message - we'll figure it out eventually.  */
+          if (pending_break_support != AUTO_BOOLEAN_TRUE 
+              || requested_shlib == NULL)
+	    error_output_message (NULL, err_msg);
 	  xfree (err_msg);
 
 	  /* If pending breakpoint support is turned off, throw error.  */

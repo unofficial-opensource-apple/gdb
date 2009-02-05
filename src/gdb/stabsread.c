@@ -51,6 +51,7 @@ static int os9k_stabs = 0;
 #include "doublest.h"
 #include "cp-abi.h"
 #include "cp-support.h"
+#include "gdb_assert.h"
 
 #include <ctype.h>
 
@@ -587,7 +588,7 @@ symbol_reference_defined (char **string)
 }
 
 struct symbol *
-define_symbol (CORE_ADDR valu, char *string, char *prefix, 
+define_symbol (CORE_ADDR valu, char *string, const char *prefix, 
                int desc, int type, struct objfile *objfile)
 {
   struct symbol *sym;
@@ -3411,6 +3412,34 @@ read_struct_type (char **pp, struct type *type, enum type_code type_code,
     if (nbits != 0)
       return error_type (pp, objfile);
   }
+
+  /* APPLE LOCAL: If there is a const or volatile type hanging off of
+     this type, we need to update the length field.  The length field
+     was moved out of the main_type field by kbuettner on 2003-02-07,
+     so we don't get the updated length for free through sharing the
+     main_type.
+
+     See the comments in gdbtypes.c:replace_type for more details.
+ 
+     This problem can come about, for instance, if we make a const
+     type of another type which is only known by reference. Then we get a
+     length of 0 for both types at creation.  We need to fix up not
+     only the actual type but all the variants here.  
+
+     The same bug exists in potentia in FSF gdb, but since they don't
+     use -gused it doesn't show up very often.  */
+  {
+    struct type *chain;
+
+    chain = type;
+    do {
+      gdb_assert(TYPE_ADDRESS_CLASS_ALL (chain) == 0);
+
+      TYPE_LENGTH (chain) = TYPE_LENGTH (type);
+      chain = TYPE_CHAIN (chain);
+    } while (chain != type);
+  }
+  /* END APPLE LOCAL */
 
   /* Now read the baseclasses, if any, read the regular C struct or C++
      class member fields, attach the fields to the type, read the C++

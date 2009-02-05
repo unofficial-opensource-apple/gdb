@@ -42,6 +42,8 @@
 #include "gdb_stat.h"
 #include "regcache.h"
 #include "bfd.h"
+#include "gdb-stabs.h"
+#include "objc-lang.h"
 
 #ifdef USE_MMALLOC
 #include <mmalloc.h>
@@ -76,6 +78,7 @@ int dyld_load_dyld_symbols_flag = 1;
 int dyld_load_dyld_shlib_symbols_flag = 1;
 int dyld_load_cfm_shlib_symbols_flag = 1;
 int dyld_print_basenames_flag = 0;
+int dyld_reload_on_downgrade_flag = 0;
 char *dyld_load_rules = NULL;
 char *dyld_minimal_load_rules = NULL;
 
@@ -100,6 +103,7 @@ void swapout_gdbarch_swap (struct gdbarch *);
 void swapin_gdbarch_swap (struct gdbarch *);
 
 static void info_sharedlibrary_address (CORE_ADDR);
+static void set_load_state_1 (struct dyld_objfile_entry *e, const struct dyld_path_info *d, int load_state);
 
 static
 void dyld_info_read_raw
@@ -774,13 +778,11 @@ macosx_init_dyld (struct macosx_dyld_thread_status *s,
     e->reason = dyld_reason_executable;
     if (o != NULL)
       {
-	e->abfd = o->obfd;
         e->objfile = o;
+	/* No need to set e->abfd, since e->objfile is present. */
         e->load_flag = o->symflags;
-      }
-    if (e->abfd != NULL)
-      {
-	e->text_name = xstrdup (bfd_get_filename (e->abfd));
+	e->text_name = o->name;
+	e->text_name = xstrdup (bfd_get_filename (o->obfd));
       }
     e->loaded_from_memory = 0;
     e->loaded_name = e->text_name;
@@ -879,7 +881,17 @@ int dyld_info_process_raw
   }
 
   if (namebuf != NULL) {
-    entry->dyld_name = xstrdup (namebuf);
+
+    char buf[PATH_MAX];
+    char *resolved = NULL;
+
+    resolved = namebuf;
+
+    resolved = realpath (namebuf, buf);
+    if (resolved == NULL)
+      resolved = namebuf;
+
+    entry->dyld_name = xstrdup (resolved);
     entry->dyld_name_valid = 1;
   }
 
@@ -893,9 +905,9 @@ int dyld_info_process_raw
     entry->reason = dyld_reason_executable;
     if (symfile_objfile != NULL) {
       entry->objfile = symfile_objfile;
-      entry->abfd = symfile_objfile->obfd;
+      /* No need to set e->abfd, since e->objfile is present. */
       entry->loaded_from_memory = 0;
-      entry->loaded_name = entry->dyld_name;
+      entry->loaded_name = symfile_objfile->name;
       entry->loaded_addr = 0;
       entry->loaded_addrisoffset = 1;
     }
@@ -1133,7 +1145,7 @@ macosx_dyld_update (int dyldonly)
 
   if (ui_out_is_mi_like_p (uiout) && libraries_changed)
     {
-      struct cleanups *notify_cleanup;
+      struct cleanup *notify_cleanup;
       notify_cleanup = make_cleanup_ui_out_notify_begin_end (uiout, "shlibs-updated");
       do_cleanups (notify_cleanup);
     }
@@ -1238,14 +1250,8 @@ map_shlib_numbers
 }
 
 static void
-add_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
-{
-  if (e != NULL)
-    e->load_flag = OBJF_SYM_ALL;
-}
-
-static void
-dyld_add_symbol_file_command (char *args, int from_tty)
+dyld_generic_command_with_helper
+(char *args, int from_tty, void (*function) (struct dyld_path_info *, struct dyld_objfile_entry *, struct objfile *, const char *param))
 {
   struct dyld_objfile_info original_info, modified_info;
 
@@ -1256,7 +1262,7 @@ dyld_add_symbol_file_command (char *args, int from_tty)
   dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
   dyld_objfile_info_clear_objfiles (&modified_info);
 
-  map_shlib_numbers (args, add_helper, &macosx_status->dyld_status.path_info, &modified_info);
+  map_shlib_numbers (args, function, &macosx_status->dyld_status.path_info, &modified_info);
 
   dyld_merge_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
 		     &original_info, &modified_info);
@@ -1270,12 +1276,31 @@ dyld_add_symbol_file_command (char *args, int from_tty)
 }
 
 static void
+add_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
+{
+  if (e != NULL)
+    e->load_flag = OBJF_SYM_ALL;
+}
+
+static void
+dyld_add_symbol_file_command (char *args, int from_tty)
+{
+  dyld_generic_command_with_helper (args, from_tty, add_helper);
+}
+
+static void
 remove_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
 {
   if (e != NULL)
     e->load_flag = OBJF_SYM_NONE | dyld_minimal_load_flag (d, e);
 }
 
+static
+void dyld_remove_symbol_file_command (char *args, int from_tty)
+{
+  dyld_generic_command_with_helper (args, from_tty, remove_helper);
+}
+        
 static void
 specify_symfile_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
 {
@@ -1285,86 +1310,132 @@ specify_symfile_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, 
 
 static void dyld_specify_symbol_file_command (char *args, int from_tty)
 {
-  struct dyld_objfile_info original_info, modified_info;
-
-  dyld_objfile_info_init (&original_info);
-  dyld_objfile_info_init (&modified_info);
-
-  dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_clear_objfiles (&modified_info);
-
-  map_shlib_numbers (args, specify_symfile_helper, &macosx_status->dyld_status.path_info, &modified_info);
-
-  dyld_merge_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-		     &original_info, &modified_info);
-  dyld_update_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-                      &modified_info);
-  
-  dyld_objfile_info_copy (&macosx_status->dyld_status.current_info, &modified_info);
-
-  dyld_objfile_info_free (&original_info);
-  dyld_objfile_info_free (&modified_info);
+  dyld_generic_command_with_helper (args, from_tty, specify_symfile_helper);
 }
 
-static
-void dyld_remove_symbol_file_command (char *args, int from_tty)
+/* objfile_set_load_state
+
+   Given objfile O, this changes the load state to LOAD_STATE.  This
+   will cause the current objfile to get tossed, and a new version
+   read in.  If LOAD_STATE matches the objfile's current load state,
+   this is a no-op, however.  */
+
+int
+dyld_objfile_set_load_state (struct objfile *o, int load_state)
 {
-  struct dyld_objfile_info original_info, modified_info;
+  struct dyld_objfile_entry *e;
+  int i, found_it = 0;
 
-  dyld_objfile_info_init (&original_info);
-  dyld_objfile_info_init (&modified_info);
-
-  dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_clear_objfiles (&modified_info);
-
-  map_shlib_numbers (args, remove_helper, &macosx_status->dyld_status.path_info, &modified_info);
-
-  dyld_merge_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-		     &original_info, &modified_info);
-  dyld_update_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-                      &modified_info);
+  DYLD_ALL_OBJFILE_INFO_ENTRIES (&macosx_status->dyld_status.current_info, e, i)
+    if (e->objfile == o)
+      {
+	set_load_state_1 (e, &macosx_status->dyld_status.path_info, load_state);
+	found_it = 1;
+	if (ui_out_is_mi_like_p (uiout))
+	  {
+	    struct cleanup *notify_cleanup;
+	    notify_cleanup = make_cleanup_ui_out_notify_begin_end (uiout, "shlib-state-modified");
+	    dyld_print_entry_info (e, i + 1, 0);
+	    do_cleanups (notify_cleanup);
+	  }
+	break;
+      }
   
-  dyld_objfile_info_copy (&macosx_status->dyld_status.current_info, &modified_info);
-
-  dyld_objfile_info_free (&original_info);
-  dyld_objfile_info_free (&modified_info);
+  return found_it;
 }
         
 static void
-set_load_state_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, struct objfile *o, const char *arg)
+set_to_default_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e,
+		       struct objfile *o, const char *arg)
 {
   if (e == NULL)
     return;
 
-  e->load_flag = dyld_parse_load_level (arg);
-  e->load_flag |= dyld_minimal_load_flag (d, e);
+  e->load_flag = dyld_default_load_flag (d, e) | dyld_minimal_load_flag (d, e);
+}
+
+static void
+dyld_apply_load_rules_command (char *args, int from_tty)
+{
+  dyld_generic_command_with_helper (args, from_tty, set_to_default_helper);
+}
+
+static void
+set_load_state_1 (struct dyld_objfile_entry *e, const struct dyld_path_info *d,
+		  int load_state)
+{
+  struct bfd *tmp_bfd;
+  enum dyld_reload_result state_change;
+
+  e->load_flag = load_state;
+
+  /* If there is no existing objfile, just load it (if appropriate) and return. */
+
+  if (e->objfile == NULL)
+    {
+      dyld_load_library (d, e);
+      if (e->abfd)
+	dyld_load_symfile (e);
+      return;
+    }
+
+  state_change = dyld_should_reload_objfile_for_flags (e); 
+  if (state_change == DYLD_NO_CHANGE)
+    return;
+
+  /* This is a bit of a hack, but I don't want to have to throw away and
+     reconstitute the bfd.  So I am hiding it from dyld_remove_objfile.  
+     I may give up on this!  Turns out the bfd's strtab for the fake
+     stabstr section is actually a pointer to the version allocated on
+     the objfile's objstack!!!  So I need to null this out so it gets reset.  */
+  {
+    int ret;
+    struct bfd_mach_o_load_command *gsymtab;
+
+    tmp_bfd = e->objfile->obfd;
+    ret = bfd_mach_o_lookup_command (tmp_bfd, BFD_MACH_O_LC_SYMTAB, &gsymtab);
+    if (ret != 1)
+      {
+	warning ("Error fetching LC_SYMTAB load command from object file \"%s\"", 
+	   tmp_bfd->filename);
+      }
+    else if (gsymtab->command.symtab.strtab == DBX_STRINGTAB (e->objfile))
+      gsymtab->command.symtab.strtab = NULL;
+
+    e->objfile->obfd = NULL;
+  }
+  tell_breakpoints_objfile_changed (e->objfile);
+  tell_objc_msgsend_cacher_objfile_changed (e->objfile);
+
+  /* FIXME: check state_change, and remove the varobj's that depend
+     on the objfile now as well.  */
+
+  dyld_remove_objfile (e);
+
+  e->abfd = tmp_bfd;
+  dyld_load_symfile (e);
+  
+}
+
+static void
+set_load_state_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, 
+		       struct objfile *o, const char *arg)
+{
+  int load_state;
+
+  if (e == NULL)
+    return;
+
+  load_state = dyld_parse_load_level (arg);
+  load_state |= dyld_minimal_load_flag (d, e);
+  set_load_state_1 (e, d, load_state);
 }
 
 static void
 dyld_set_load_state_command (char *args, int from_tty)
 {
-  struct dyld_objfile_info original_info, modified_info;
-
-  dyld_objfile_info_init (&original_info);
-  dyld_objfile_info_init (&modified_info);
-
-  dyld_objfile_info_copy (&original_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_copy (&modified_info, &macosx_status->dyld_status.current_info);
-  dyld_objfile_info_clear_objfiles (&modified_info);
-
-  map_shlib_numbers (args, set_load_state_helper, &macosx_status->dyld_status.path_info, &modified_info);
-
-  dyld_merge_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-                      &original_info, &modified_info);
-  dyld_update_shlibs (&macosx_status->dyld_status, &macosx_status->dyld_status.path_info,
-                      &modified_info);
-  
-  dyld_objfile_info_copy (&macosx_status->dyld_status.current_info, &modified_info);
-
-  dyld_objfile_info_free (&original_info);
-  dyld_objfile_info_free (&modified_info);
+  map_shlib_numbers (args, set_load_state_helper, &macosx_status->dyld_status.path_info, 
+		     &macosx_status->dyld_status.current_info);
 }
         
 static void
@@ -1511,7 +1582,7 @@ info_sharedlibrary_address (CORE_ADDR address)
   if (baselen < 12)
     baselen = 12;
 
-  osection = find_pc_sect_in_ordered_sections (address, NULL);
+  osection = find_pc_sect_section (address, NULL);
   if (osection != NULL)
     {
       for (i = 0; i < s->nents; i++)
@@ -1622,14 +1693,14 @@ cache_symfiles_helper (struct dyld_path_info *d, struct dyld_objfile_entry *e, s
   if (e != NULL)
     {
       old = e->objfile;
-      abfd = e->abfd;
-      new = cache_bfd (e->abfd, e->prefix, e->load_flag, 0, 0, arg);
+      abfd = e->objfile->obfd;
+      new = cache_bfd (e->objfile->obfd, e->prefix, e->load_flag, 0, 0, arg);
     }
   else
     {
       CHECK_FATAL (o != NULL);
       old = o;
-      abfd =o->obfd;
+      abfd = o->obfd;
       new = cache_bfd (o->obfd, o->prefix, o->symflags, 0, 0, arg);
     }
 
@@ -1697,6 +1768,8 @@ dyld_cache_symfile_command (char *args, int from_tty)
     bfd_close (abfd);
   if (objfile != NULL)
     free_objfile (objfile);
+  if (abfd != NULL)
+    bfd_close (abfd);
 
 #else /* ! MAPPED_SYMFILES */
   error ("Cached symfiles are not supported on this configuration of GDB.");
@@ -1839,6 +1912,9 @@ _initialize_macosx_nat_dyld ()
 		  "Commands for internal sharedlibrary manipulation.",
 		  &maintenanceshliblist, "maintenance sharedlibrary ", 0, &maintenancelist);
 
+  add_cmd ("apply-load-rules", class_run, dyld_apply_load_rules_command,
+           "Apply the current load-rules to the existing shared library state.", &shliblist);
+
   add_cmd ("add-symbol-file", class_run, dyld_add_symbol_file_command,
            "Add a symbol file.", &shliblist);
 
@@ -1974,6 +2050,11 @@ unless you know what you are doing.",
   cmd = add_set_cmd ("combine-shlibs-added", class_support, var_zinteger,
 		     (char *) &dyld_combine_shlibs_added,
 		     "Set if GDB should combine shlibs-added events from the same image into a single event.", &setshliblist);
+  add_show_from_set (cmd, &showshliblist);
+
+  cmd = add_set_cmd ("reload-on-downgrade", class_support, var_zinteger,
+		     (char *) &dyld_reload_on_downgrade_flag,
+		     "Set if GDB should re-read symbol files in order to remove symbol information.", &setshliblist);
   add_show_from_set (cmd, &showshliblist);
 
   add_cmd ("cache-symfiles", class_run, dyld_cache_symfiles_command,

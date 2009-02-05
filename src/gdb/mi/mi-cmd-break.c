@@ -32,6 +32,7 @@
 #include "interps.h"
 #include "gdb.h"
 #include "gdbcmd.h" /* For print_command_lines.  */
+#include "filenames.h"
 
 enum
   {
@@ -92,6 +93,7 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
   int ignore_count = 0;
   char *condition = NULL;
   char *requested_shlib = NULL;
+  char realpath_buf[PATH_MAX];
   enum gdb_rc rc;
   struct gdb_events *old_hooks;
   enum opt
@@ -141,6 +143,9 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
 	  break;
 	case IGNORE_COUNT_OPT:
 	  ignore_count = atol (optarg);
+          /* APPLE LOCAL: Same behavior as set_ignore_count().  */
+          if (ignore_count < 0)
+            ignore_count = 0;
 	  break;
 	case THREAD_OPT:
 	  thread = atol (optarg);
@@ -156,6 +161,18 @@ mi_cmd_break_insert (char *command, char **argv, int argc)
   if (optind < argc - 1)
     error ("mi_cmd_break_insert: Garbage following <location>");
   address = argv[optind];
+
+  /* APPLE LOCAL: realpath() the incoming shlib name, as we do with all
+     objfile/dylib/executable names.  NB this condition is incorrect if
+     we're passed something like "./foo.dylib", "../foo.dylib", or
+     "~/bin/foo.dylib", but that shouldn't happen....  */
+  if (requested_shlib && IS_ABSOLUTE_PATH (requested_shlib))
+    {
+      realpath (requested_shlib, realpath_buf);
+      /* It'll be xstrdup()'ed down in the breakpoint command, so just point
+         to the stack array until then. */
+      requested_shlib = realpath_buf; 
+    }
 
   /* Now we have what we need, let's insert the breakpoint! */
   old_hooks = set_gdb_event_hooks (&breakpoint_hooks);

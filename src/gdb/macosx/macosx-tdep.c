@@ -69,8 +69,10 @@ struct deprecated_complaint unsupported_indirect_symtype_complaint =
 
 #define BFD_GETB16(addr) ((addr[0] << 8) | addr[1])
 #define BFD_GETB32(addr) ((((((unsigned long) addr[0] << 8) | addr[1]) << 8) | addr[2]) << 8 | addr[3])
+#define BFD_GETB64(addr) ((((((((((unsigned long) addr[0] << 8) | addr[1]) << 8) | addr[2]) << 8 | addr[3]) << 8 | addr[4]) << 8 | addr[5]) << 8 | addr[6]) << 8 | addr[7])
 #define BFD_GETL16(addr) ((addr[1] << 8) | addr[0])
 #define BFD_GETL32(addr) ((((((unsigned long) addr[3] << 8) | addr[2]) << 8) | addr[1]) << 8 | addr[0])
+#define BFD_GETL64(addr) ((((((((((unsigned long) addr[7] << 8) | addr[6]) << 8) | addr[5]) << 8 | addr[4]) << 8 | addr[3]) << 8 | addr[2]) << 8 | addr[1]) << 8 | addr[0])
 
 unsigned char macosx_symbol_types[256];
 
@@ -134,42 +136,58 @@ static void macosx_symbol_types_init ()
   }
 }
 
-static unsigned char macosx_symbol_type (macho_type, macho_other, abfd)
+static unsigned char macosx_symbol_type (macho_type, macho_sect, abfd)
      unsigned char macho_type;
-     unsigned char macho_other;
+     unsigned char macho_sect;
      bfd *abfd;
 {
   unsigned char ntype = macosx_symbol_types[macho_type];
 
+  /* If the symbol refers to a section, modify ntype based on the value of macho_sect. */
+
   if ((macho_type & BFD_MACH_O_N_TYPE) == BFD_MACH_O_N_SECT)
     {
-      if (macho_other == 1)
+      if (macho_sect == 1)
 	{
+	  /* Section 1 is always the text segment. */
 	  ntype |= N_TEXT;
 	}
-      else if (macho_other <= abfd->tdata.mach_o_data->nsects)
+
+      else if ((macho_sect > 0) && (macho_sect <= abfd->tdata.mach_o_data->nsects))
 	{
-	  const char *segname = abfd->tdata.mach_o_data->sections[macho_other - 1]->segname;
-	  const char *sectname = abfd->tdata.mach_o_data->sections[macho_other - 1]->sectname;
-	
-	  if ((segname != NULL) && (strcmp (segname, "__DATA") == 0))
+	  const bfd_mach_o_section *sect = abfd->tdata.mach_o_data->sections[macho_sect - 1];
+
+	  if (sect == NULL)
 	    {
-	      if ((sectname != NULL) && (strcmp (sectname, "__bss") == 0))
+	      /* complain (&unknown_macho_section_complaint, local_hex_string (macho_sect)); */
+	    }
+	  else if ((sect->segname != NULL) && (strcmp (sect->segname, "__DATA") == 0))
+	    {
+	      if ((sect->sectname != NULL) && (strcmp (sect->sectname, "__bss") == 0))
 		ntype |= N_BSS;
 	      else
 		ntype |= N_DATA;
 	    }
-
-	  if ((segname != NULL) && (strcmp (segname, "__TEXT") == 0))
-	    ntype |= N_TEXT;
+	  else if ((sect->segname != NULL) && (strcmp (sect->segname, "__TEXT") == 0))
+	    {
+	      ntype |= N_TEXT;
+	    }
+	  else
+	    {
+	      /* complain (&unknown_macho_section_complaint, local_hex_string (macho_sect)); */
+	      ntype |= N_DATA;
+	    }
 	}
+
       else
 	{
-	  /* complain (&unknown_macho_section_complaint, local_hex_string (macho_other)); */
+	  /* complain (&unknown_macho_section_complaint, local_hex_string (macho_sect)); */
 	  ntype |= N_DATA;
 	}
     }
-  
+
+  /* All modifications are done; return the computed type code. */
+
   return ntype;
 }
 
@@ -178,14 +196,22 @@ void macosx_internalize_symbol (in, ext, abfd)
      struct external_nlist *ext;
      bfd *abfd;
 {
+  int symwide = (bfd_mach_o_version (abfd) > 1);
+
   if (bfd_header_big_endian (abfd)) {
     in->n_strx = BFD_GETB32 (ext->e_strx);
     in->n_desc = BFD_GETB16 (ext->e_desc);
-    in->n_value = BFD_GETB32 (ext->e_value);
+    if (symwide)
+      in->n_value = BFD_GETB64 (ext->e_value);
+    else
+      in->n_value = BFD_GETB32 (ext->e_value);
   } else if (bfd_header_little_endian (abfd)) {
     in->n_strx = BFD_GETL32 (ext->e_strx);
     in->n_desc = BFD_GETL16 (ext->e_desc);
-    in->n_value = BFD_GETL32 (ext->e_value);
+    if (symwide)
+      in->n_value = BFD_GETL64 (ext->e_value);
+    else
+      in->n_value = BFD_GETL32 (ext->e_value);
   } else {
     error ("unable to internalize symbol (unknown endianness)");
   }

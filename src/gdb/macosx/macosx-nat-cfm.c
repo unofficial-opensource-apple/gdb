@@ -25,6 +25,7 @@
 #include "breakpoint.h"
 #include "gdbcmd.h"
 #include "gdbcore.h"
+#include "symfile.h"
 
 #include "macosx-nat-inferior.h"
 #include "macosx-nat-inferior-util.h"
@@ -32,6 +33,7 @@
 #include "macosx-nat-cfm.h"
 #include "macosx-nat-cfm-io.h"
 #include "macosx-nat-dyld-info.h"
+#include "macosx-nat-dyld-io.h"
 
 #define CFM_MAX_UNIVERSE_LENGTH 1024
 #define CFM_MAX_CONNECTION_LENGTH 1024

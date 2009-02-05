@@ -82,6 +82,7 @@ const char *kdp_req_string (kdp_req_t req)
   switch (req) {
     case KDP_CONNECT: return "CONNECT";
     case KDP_DISCONNECT: return "DISCONNECT";
+    case KDP_HOSTREBOOT: return "HOSTREBOOT";
     case KDP_REATTACH: return "REATTACH";
     case KDP_HOSTINFO: return "HOSTINFO";
     case KDP_VERSION: return "VERSION";
@@ -289,6 +290,7 @@ void kdp_log_packet
       break;
     case KDP_REATTACH: break;
     case KDP_DISCONNECT: break;
+    case KDP_HOSTREBOOT: break;
     case KDP_HOSTINFO: break;
     case KDP_VERSION: break;
     case KDP_REGIONS: break;
@@ -345,6 +347,8 @@ void kdp_log_packet
       break;
     case KDP_EXCEPTION: break;
     case KDP_TERMINATION: break;
+    default:
+      break;
     }    
   }
   
@@ -480,6 +484,7 @@ kdp_return_t kdp_marshal
       write16u (s + 8, p->reattach_req.req_reply_port, 0);
       break;
     case KDP_DISCONNECT:
+    case KDP_HOSTREBOOT:
     case KDP_HOSTINFO:
     case KDP_VERSION:
     case KDP_REGIONS:
@@ -781,6 +786,10 @@ kdp_return_t kdp_unmarshal
       CHECK_PLEN_LEN (plen, 10);
       break;
     case KDP_DISCONNECT:
+      CHECK_PLEN_RLEN (plen, rlen);
+      CHECK_PLEN_LEN (plen, 8);
+      break;
+    case KDP_HOSTREBOOT:
       CHECK_PLEN_RLEN (plen, rlen);
       CHECK_PLEN_LEN (plen, 8);
       break;

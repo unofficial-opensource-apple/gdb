@@ -143,13 +143,13 @@ set libsystem_commpage_full_pathname "$libsystem_full_pathname\\\[LC_SEGMENT.__D
 
 send_gdb "10-file-sharedlibrary-info\n" 
 gdb_expect {
-  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\"\\\].*" {
+  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\"\\\].*" {
     pass "verify pre-start libsystem via mi1"
   }
-  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\",sympath=.*" {
+  -re "10\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"-\",reason=\"init\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",slide=\"\",loaded_addr=\"$libsystem_load_addr\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname\",sympath=.*" {
       fail "verify pre-start libsystem via mi1 - info shlib shows sympath"
   }
-  -re "$gdb_prompt $" {
+  -re "$mi_gdb_prompt$" {
       fail "verify pre-start libsystem via mi1"
   }
   timeout {
@@ -183,7 +183,7 @@ gdb_expect {
 }
 
 
-mi_gdb_test "50-file-sharedlibrary-info" "50\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"$libsystem_load_addr\",reason=\"dyld\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",loaded_addr=\"$libsystem_load_addr\",slide=\"0x0\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname.*\"\\\].*" "verify post-start libsystem via mi1"
+mi_gdb_test "50-file-sharedlibrary-info" "50\\^done.*shlib-info=\\\[num=\"$decimal\",name=\"$libsystem_shortname\",kind=\"-\",dyld-addr=\"$libsystem_load_addr\",reason=\"dyld\",requested-state=\"Y\",state=\"Y\",path=\"$libsystem_full_pathname\",description=\"$libsystem_full_pathname\",loaded_addr=\"$libsystem_load_addr\",slide=\"0x0\",prefix=\"\",commpage-objpath=\"$libsystem_commpage_full_pathname.*\"\\\].*" "verify post-start libsystem via mi1"
 
 mi_gdb_exit
 
@@ -305,7 +305,7 @@ gdb_test "run" "Starting program:.*"
 # Verify that mydlib slid like it should have and libSystem stayed put.
 send_gdb "info sharedlibrary\n"
 gdb_expect {
-  -re ".* $decimal ${testlibfile}.dylib *- ($hex) *dyld Y Y $libbinfile at ($hex) \\(offset (0x\[^0\]\[0-9a-fA-F\]+)\\).* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y $libsystem_full_pathname at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
+  -re ".* $decimal ${testlibfile}.dylib *- ($hex) *dyld Y Y $libbinfile at ($hex) \\(offset (-?$hex)\\).* $decimal $libsystem_shortname *- $libsystem_load_addr *dyld Y Y $libsystem_full_pathname at $libsystem_load_addr \\(offset 0x0\\).*$gdb_prompt $" {
     set mylib_slid_addr $expect_out(1,string)
     set mylib_slid_addr_duplicate $expect_out(1,string)
     set mylib_slid_offset $expect_out(2,string)

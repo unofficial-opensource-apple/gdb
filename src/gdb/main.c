@@ -697,7 +697,7 @@ extern int gdbtk_test (char *);
 
   if (corearg != NULL)
     {
-      if (catch_command_errors (core_file_command, corearg, !batch, RETURN_MASK_ALL) == 0)
+      if (catch_command_errors (core_file_attach, corearg, !batch, RETURN_MASK_ALL) == 0)
 	{
 	  /* See if the core file is really a PID. */
 	  /* Be careful, we have quoted the corearg above... */

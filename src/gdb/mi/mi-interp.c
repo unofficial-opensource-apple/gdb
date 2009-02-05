@@ -75,6 +75,10 @@ static void mi3_command_loop (void);
 static void mi2_command_loop (void);
 static void mi1_command_loop (void);
 
+/* APPLE LOCAL: We need to preserve the mi0 interpreter, because
+   that's what CodeWarrior 9 uses (though it just requests "mi".  */
+static void mi0_command_loop (void);
+
 static char *
 mi_interp_read_one_line_hook (char *prompt, int repeat, char *anno);
 
@@ -158,7 +162,9 @@ mi_interpreter_resume (void *data)
   else if (current_interp_named_p (INTERP_MI3))
     command_loop_hook = mi3_command_loop;
   else
-    command_loop_hook = mi2_command_loop;
+    /* APPLE LOCAL: The default needs to be mi0,
+       because that's what CodeWarrior expects.  */
+    command_loop_hook = mi0_command_loop;
   set_gdb_event_hooks (&mi_async_hooks);
 
   return 1;
@@ -655,5 +661,9 @@ _initialize_mi_interp (void)
 
   /* "mi" selects the most recent released version.  "mi2" was
      released as part of GDB 6.0.  */
-  interp_add (interp_new (INTERP_MI, NULL, mi_out_new (2), &procs));
+
+  /* APPLE LOCAL: Set this back to mi0, since CodeWarrior just asks for
+     the "mi" and doesn't specify a version, but chokes on mi2.  */
+
+  interp_add (interp_new (INTERP_MI, NULL, mi_out_new (0), &procs));
 }

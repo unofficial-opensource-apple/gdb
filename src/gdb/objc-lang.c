@@ -1792,6 +1792,11 @@ static struct objc_methcall methcalls[] = {
 
 #define nmethcalls (sizeof (methcalls) / sizeof (methcalls[0]))
 
+/* APPLE LOCAL: Have we already cached the locations of the objc_msgsend
+   functions?  Set to zero if new objfiles have loaded so our cache might
+   be dirty.  */
+static int cached_objc_msgsend_table_is_valid = 0;
+
 /* The following function, "find_objc_msgsend", fills in the data
  * structure "objc_msgs" by finding the addresses of each of the
  * (currently four) functions that it holds (of which objc_msgSend is
@@ -1803,6 +1808,9 @@ static void
 find_objc_msgsend (void)
 {
   unsigned int i;
+  if (cached_objc_msgsend_table_is_valid)
+    return;
+
   for (i = 0; i < nmethcalls; i++) {
 
     struct minimal_symbol *func, *orig_func;
@@ -1834,6 +1842,18 @@ find_objc_msgsend (void)
 	  + orig_func->ginfo.bfd_section->_raw_size;
       }
   }
+
+  cached_objc_msgsend_table_is_valid = 1;
+}
+
+/* APPLE LOCAL: When a new objfile is added to the system, let's 
+   re-search for the msgsend calls in case, um, somehow things have moved 
+   around.  (or maybe they were not present earlier, but are now.)  */
+
+void
+tell_objc_msgsend_cacher_objfile_changed (struct objfile *obj __attribute__ ((__unused__)))
+{
+  cached_objc_msgsend_table_is_valid = 0;
 }
 
 /* find_objc_msgcall (replaces pc_off_limits)
@@ -2262,6 +2282,7 @@ value_objc_target_type (struct value *val, struct block *block)
     }
   return dynamic_type;
 }
+
 void
 _initialize_objc_lang ()
 {

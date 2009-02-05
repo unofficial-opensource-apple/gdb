@@ -94,13 +94,22 @@ void mutils_debug (const char *fmt, ...)
   }
 }
 
-unsigned int child_get_pagesize ()
+unsigned int 
+child_get_pagesize ()
 {
   kern_return_t	status;
-  int result;
+  static int result = -1;
 
-  status = host_page_size (mach_host_self(), &result);
-  MACH_CHECK_ERROR (status);
+  if (result == -1)
+    {
+      status = host_page_size (mach_host_self(), &result);
+      /* This is probably being over-careful, since if we
+	 can't call host_page_size on ourselves, we probably
+	 aren't going to get much further.  */
+      if (status != KERN_SUCCESS)
+	result = -1;
+      MACH_CHECK_ERROR (status);
+    }
 
   return result;
 }

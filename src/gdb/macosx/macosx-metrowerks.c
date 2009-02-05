@@ -187,7 +187,7 @@ metrowerks_address_to_name_command (char* args, int from_tty)
   address = strtoul (args, NULL, 16);
   if (errno == 0)
     {
-      osection = find_pc_sect_in_ordered_sections (address, NULL);
+      osection = find_pc_sect_section (address, NULL);
       if (osection != NULL)
         {
           printf_unfiltered ("%s\n", osection->objfile->name);

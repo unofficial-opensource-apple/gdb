@@ -42,6 +42,7 @@
 #include "gdb-stabs.h"
 #include "gdb_assert.h"
 #include "interps.h"
+#include "objc-lang.h"
 
 #include <mach-o/nlist.h>
 #include <mach-o/loader.h>
@@ -64,6 +65,7 @@ extern int dyld_load_dyld_symbols_flag;
 extern int dyld_load_dyld_shlib_symbols_flag;
 extern int dyld_load_cfm_shlib_symbols_flag;
 extern int dyld_print_basenames_flag;
+extern int dyld_reload_on_downgrade_flag;
 extern char *dyld_load_rules;
 extern char *dyld_minimal_load_rules;
 
@@ -74,10 +76,10 @@ extern int inferior_auto_start_cfm_flag;
 extern macosx_inferior_status *macosx_status;
 
 static int
-dyld_print_status()
+dyld_print_status ()
 {
-    /* do not print status dots when executing MI */
-  return !ui_out_is_mi_like_p (uiout);
+  /* do not print status dots when executing MI */
+  return ! ui_out_is_mi_like_p (uiout);
 }
 
 void dyld_add_inserted_libraries
@@ -182,6 +184,24 @@ void dyld_add_image_libraries
       }
 
       e = dyld_objfile_entry_alloc (info);
+
+      /* We have to run realpath on the text name here because some
+	 makefiles build the library with one name, then copy it to another.
+	 For instance, they will build libfoo.2.dylib, but install the actual
+	 binary as libfoo.2.1.dylib, and then link libfoo.2.dylib back to this.
+	 That means the load command refers to a file that exists (as a link)
+	 but isn't the same as what gets loaded.  If we canonicalize everything
+	 to the real file, then we won't get fooled by this.  */
+
+      {
+	char buf[PATH_MAX];
+
+	if (realpath (name, buf) != NULL)
+	  {
+	    xfree (name);
+	    name = xstrdup (buf);
+	  }
+      }
 
       e->text_name = name;
       e->text_name_valid = 1;
@@ -378,7 +398,14 @@ dyld_resolve_load_flag (const struct dyld_path_info *d, struct dyld_objfile_entr
 
     int ret;
 
-    reason = dyld_reason_string (e->reason);
+    switch (e->reason & dyld_reason_type_mask) {
+    case dyld_reason_user: reason = "user"; break;
+    case dyld_reason_init: reason = "dyld"; break;
+    case dyld_reason_executable: reason = "exec"; break;
+    case dyld_reason_dyld: reason = "dyld"; break;
+    case dyld_reason_cfm: reason = "cfm"; break;
+    default: reason = "INVALID"; break;
+    }      
 
     if (e->objfile) {
       if (e->loaded_from_memory) {
@@ -453,6 +480,7 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
   CHECK_FATAL (e->allocated);
 
   if (e->abfd) { return; }
+  if (e->objfile) { return; }
   if (e->loaded_error) { return; }
 
   if (e->reason & dyld_reason_executable_mask) {
@@ -485,7 +513,7 @@ void dyld_load_library (const struct dyld_path_info *d, struct dyld_objfile_entr
       warning ("Unable to read symbols from %s.", s);
       xfree (s);
     } else {
-      e->loaded_name = name;
+      e->loaded_name = bfd_get_filename (e->abfd);
       e->loaded_from_memory = 0;
     }
   }	
@@ -638,8 +666,6 @@ void dyld_symfile_loaded_hook (struct objfile *o)
 
 void dyld_load_symfile (struct dyld_objfile_entry *e) 
 {
-  char *name = NULL;
-  char *leaf = NULL;
   struct section_addr_info *addrs;
   unsigned int i;
 
@@ -647,16 +673,9 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
 
   CHECK_FATAL (e->allocated);
 
-  CHECK_FATAL (e->abfd != NULL);
-  
   if (e->reason & dyld_reason_executable_mask) {
     CHECK_FATAL (e->objfile == symfile_objfile);
   }
-
-  name = dyld_entry_string (e, dyld_print_basenames_flag);
-
-  leaf = strrchr (name, '/');
-  leaf = ((leaf != NULL) ? leaf : name);
 
   if (e->dyld_valid) { 
     e->loaded_addr = e->dyld_addr;
@@ -669,90 +688,96 @@ void dyld_load_symfile (struct dyld_objfile_entry *e)
     e->loaded_addrisoffset = 1;
   }
 
-  if (e->objfile != NULL) {
-    struct section_offsets *new_offsets = (struct section_offsets *) xmalloc (SIZEOF_N_SECTION_OFFSETS (e->objfile->num_sections));
-    tell_breakpoints_objfile_changed (e->objfile);
-    for (i = 0; i < e->objfile->num_sections; i++) {
-      new_offsets->offsets[i] = e->dyld_slide;
-    }
-    if (info_verbose)
-      printf_filtered ("Relocating symbols from %s...", e->objfile->name);
-    gdb_flush (gdb_stdout);
-#if MAPPED_SYMFILES
-    mmalloc_protect (e->objfile->md, PROT_READ | PROT_WRITE);
-#endif
-    objfile_relocate (e->objfile, new_offsets);
-#if MAPPED_SYMFILES
-    mmalloc_protect (e->objfile->md, PROT_READ);
-#endif
-    xfree (new_offsets);
-    if (info_verbose)
-      printf_filtered ("done\n");
-  } else {
-
-    addrs = alloc_section_addr_info (bfd_count_sections (e->abfd));
-
-    for (i = 0; i < addrs->num_sections; i++) {
-      addrs->other[i].name = NULL;
-      addrs->other[i].addr = e->dyld_slide;
-      addrs->other[i].sectindex = 0;
-    }
-
-    addrs->addrs_are_offsets = 1;
-
-    /* If we are loading the library for the first time, check to see
-       if it has a __DATA.__commpage section, and if so, process the
-       contents of that section as if it were a separate objfile.
-       This objfile will not get relocated along with the parent
-       library, which is appropriate since the commpage never moves in
-       memory. */
-
-    const char *segname = "LC_SEGMENT.__DATA.__commpage";
-    asection *commsec;
-
-    e->objfile = symbol_file_add_bfd_safe (e->abfd, 0, addrs, 0, 0, e->load_flag, 0, e->prefix);
-
-    commsec = bfd_get_section_by_name (e->abfd, segname);
-    if (commsec != NULL)
-      {
-	char *buf;
-	bfd_size_type len;
-	char *bfdname;
-
-	len = bfd_section_size (e->abfd, commsec);
-	buf = xmalloc (len * sizeof (char));
-	bfdname = xmalloc (strlen (e->abfd->filename) + 128);
-	  
-	sprintf (bfdname, "%s[%s]", e->abfd->filename, segname);
-
-	if (bfd_get_section_contents (e->abfd, commsec, buf, 0, len) != TRUE)
-	  warning ("unable to read commpage data");
-	  
-	e->commpage_bfd = bfd_memopenr (bfdname, NULL, buf, len);
-
-	if (! bfd_check_format (e->commpage_bfd, bfd_object))
-	  {
-	    bfd_close (e->commpage_bfd);
-	    e->commpage_bfd = NULL;
-	  }
-
-	if (e->commpage_bfd != NULL)
-	  e->commpage_objfile = symbol_file_add_bfd_safe (e->commpage_bfd, 0, 0, 0, 0, e->load_flag, 0, e->prefix);
+  if (e->objfile != NULL)
+    {
+      struct section_offsets *new_offsets = (struct section_offsets *) xmalloc (SIZEOF_N_SECTION_OFFSETS (e->objfile->num_sections));
+      tell_breakpoints_objfile_changed (e->objfile);
+      tell_objc_msgsend_cacher_objfile_changed (e->objfile);
+      for (i = 0; i < e->objfile->num_sections; i++) {
+	new_offsets->offsets[i] = e->dyld_slide;
       }
-  }
+      if (info_verbose)
+	printf_filtered ("Relocating symbols from %s...", e->objfile->name);
+      gdb_flush (gdb_stdout);
+#if MAPPED_SYMFILES
+      mmalloc_protect (e->objfile->md, PROT_READ | PROT_WRITE);
+#endif
+      objfile_relocate (e->objfile, new_offsets);
+#if MAPPED_SYMFILES
+      mmalloc_protect (e->objfile->md, PROT_READ);
+#endif
+      xfree (new_offsets);
+      if (info_verbose)
+	printf_filtered ("done\n");
 
-  xfree (name);
+    }
+  else 
+    {
 
-  if (e->objfile != NULL) { 
-    CHECK_FATAL (e->objfile->obfd != NULL);
-  }
+      CHECK_FATAL (e->abfd != NULL);
+  
+      addrs = alloc_section_addr_info (bfd_count_sections (e->abfd));
 
-  if (e->objfile == NULL) {
-    e->loaded_error = 1;
-    e->abfd = NULL;
-    xfree (name);
-    return;
-  }
+      for (i = 0; i < addrs->num_sections; i++) {
+	addrs->other[i].name = NULL;
+	addrs->other[i].addr = e->dyld_slide;
+	addrs->other[i].sectindex = 0;
+      }
+
+      addrs->addrs_are_offsets = 1;
+
+      e->objfile = symbol_file_add_bfd_safe (e->abfd, 0, addrs, 0, 0, e->load_flag, 0, e->prefix);
+      e->abfd = NULL;
+
+      if (e->objfile == NULL) {
+	e->loaded_error = 1;
+	return;
+      }
+
+      e->loaded_name = e->objfile->name;
+      /* CHECK_FATAL (e->objfile->obfd == e->abfd); */
+
+
+      /* If we are loading the library for the first time, check to see
+	 if it has a __DATA.__commpage section, and if so, process the
+	 contents of that section as if it were a separate objfile.
+	 This objfile will not get relocated along with the parent
+	 library, which is appropriate since the commpage never moves in
+	 memory. */
+
+      const char *segname = "LC_SEGMENT.__DATA.__commpage";
+      asection *commsec;
+
+      commsec = bfd_get_section_by_name (e->objfile->obfd, segname);
+      if (commsec != NULL)
+	{
+	  char *buf;
+	  bfd_size_type len;
+	  char *bfdname;
+
+	  len = bfd_section_size (e->objfile->obfd, commsec);
+	  buf = xmalloc (len * sizeof (char));
+	  bfdname = xmalloc (strlen (e->objfile->obfd->filename) + 128);
+	  
+	  sprintf (bfdname, "%s[%s]", e->objfile->obfd->filename, segname);
+
+	  if (bfd_get_section_contents (e->objfile->obfd, commsec, buf, 0, len) != TRUE)
+	    warning ("unable to read commpage data");
+	  
+	  e->commpage_bfd = bfd_memopenr (bfdname, NULL, buf, len);
+
+	  if (! bfd_check_format (e->commpage_bfd, bfd_object))
+	    {
+	      bfd_close (e->commpage_bfd);
+	      e->commpage_bfd = NULL;
+	    }
+
+	  if (e->commpage_bfd != NULL)
+	    e->commpage_objfile = symbol_file_add_bfd_safe (e->commpage_bfd, 0, 0, 0, 0, e->load_flag, 0, e->prefix);
+
+	  e->commpage_bfd = NULL;
+	}
+    }
 
   dyld_symfile_loaded_hook (e->objfile);
 
@@ -776,7 +801,7 @@ void dyld_load_symfiles (struct dyld_objfile_info *result)
 
     if (! e->allocated) { continue; }
     if (e->loaded_error) { continue; }
-    if (e->abfd == NULL) { continue; }
+    if ((e->abfd == NULL) && (e->objfile == NULL)) { continue; }
     if (e->objfile != NULL) {
       if ((e->dyld_valid) && (e->loaded_addr == e->dyld_addr) && (! e->loaded_addrisoffset))
 	continue;
@@ -861,6 +886,44 @@ struct dyld_objfile_entry *dyld_lookup_objfile_entry
   return NULL;
 }
 
+/* dyld_should_reload_objfile_for_flags: Checks whether the 
+   load level of the objfile in the dyld_objfile_entry E needs
+   to be reloaded.  We always say a upgrade should be done.  But
+   if it is a cached symfile, or dyld_reload_on_downgrade_flag
+   is true, then reject downgrades.  */
+
+enum dyld_reload_result 
+dyld_should_reload_objfile_for_flags (struct dyld_objfile_entry *e)
+{
+
+  /* For cached symbol files, don't reload if the cached file
+     contains *more* symbols than the request being made. */
+  if (e->objfile->flags & OBJF_MAPPED)
+    {
+      if (e->load_flag & ~e->objfile->symflags)
+	return DYLD_UPGRADE;
+      else
+	return DYLD_NO_CHANGE;
+    }
+  else
+    {
+      /* For regular symbol files, reload if there is any difference
+	 in the requested symbols at all if dyld_reload_on_downgrade_flag
+	 is set.  Otherwise, only reload on upgrade. */
+      if (e->load_flag == e->objfile->symflags)
+	return DYLD_NO_CHANGE;
+      else if (e->load_flag & ~e->objfile->symflags)
+	return DYLD_UPGRADE;
+      else
+	{
+	  if (dyld_reload_on_downgrade_flag)
+	    return DYLD_DOWNGRADE;
+	  else
+	    return DYLD_NO_CHANGE;
+	}
+    }
+}
+
 /* Called when an objfile is to be freed.
    If a corresponding dyld_objfile_entry exists, we must free that
    as well so the dyld-level structures and the high-level objfile
@@ -895,7 +958,12 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
   }
 
   CHECK_FATAL (dyld_objfile_allocated (e->objfile));
-  CHECK_FATAL (e->objfile->obfd != NULL);
+  /*  FIXME: Why is this check necessary here?  After
+      all, we check for NULL down below, and just don't
+      close the bfd if it has already gone away.
+      I am disabling it because I want to set the bfd
+      to null so it won't get closed in dyld_objfile_set_load_state.
+    CHECK_FATAL (e->objfile->obfd != NULL); */
 
   s = dyld_entry_string (e, dyld_print_basenames_flag);
   if (info_verbose) {
@@ -903,9 +971,14 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
   }
   xfree (s);
   gdb_flush (gdb_stdout);
+
   free_objfile (e->objfile);
   e->objfile = NULL;
+
+  if (e->abfd != NULL)
+    bfd_close (e->abfd);
   e->abfd = NULL;
+
   if (e->commpage_objfile != NULL) {
     /* The commpage objfile is read when symbols for the main library
        are ready for the first time; it needs to be freed along with
@@ -913,8 +986,12 @@ void dyld_remove_objfile (struct dyld_objfile_entry *e)
 
     free_objfile (e->commpage_objfile);
     e->commpage_objfile = NULL;
+
+    if (e->commpage_bfd != NULL)
+      bfd_close (e->commpage_bfd);
     e->commpage_bfd = NULL;
   }
+
   e->loaded_name = NULL;
   e->loaded_memaddr = 0;
   gdb_flush (gdb_stdout);
@@ -947,15 +1024,8 @@ void dyld_remove_objfiles (const struct dyld_path_info *d, struct dyld_objfile_i
       {
 	if ((e->user_name != NULL) && (strcmp (e->user_name, e->objfile->name) != 0))
 	  should_reload = 1;
-	
-	/* For cached symbol files, don't reload if the cached file
-	   contains *more* symbols than the request being made. */
-	if ((e->objfile->flags & OBJF_MAPPED) && (e->load_flag & ~e->objfile->symflags))
-	  should_reload = 1;
-	
-	/* For regular symbol files, reload if there is any difference
-	   in the requested symbols at all. */
-	if ((! (e->objfile->flags & OBJF_MAPPED)) && (e->load_flag != e->objfile->symflags))
+
+	if (dyld_should_reload_objfile_for_flags (e))
 	  should_reload = 1;
       }
 
@@ -1079,7 +1149,10 @@ void dyld_objfile_move_load_data
   l->commpage_bfd = f->commpage_bfd;
   l->commpage_objfile = f->commpage_objfile;
   
-  if (l->load_flag < 0) {
+  /* FIXME: This used to test l->load_flag < 0, but you are moving
+     the data from f 0> l, so it seems odd to see if l->load_flag
+     was set...  */
+  if (f->load_flag >= 0) {
     l->load_flag = f->load_flag; 
   }
 
@@ -1167,7 +1240,10 @@ void dyld_prune_shlib
 	  && (n->reason & dyld_reason_executable_mask))
 	{
 	  if ((o->objfile != NULL) && (o->objfile != n->objfile))
-	    tell_breakpoints_objfile_changed (o->objfile);
+            {
+	      tell_breakpoints_objfile_changed (o->objfile);
+	      tell_objc_msgsend_cacher_objfile_changed (o->objfile);
+            }
 	  dyld_objfile_entry_clear (o);
 	  continue;
 	}
@@ -1175,7 +1251,10 @@ void dyld_prune_shlib
       if (dyld_libraries_similar (o, n))
 	{
 	  if (o->objfile != NULL)
-	    tell_breakpoints_objfile_changed (o->objfile);
+            {
+	      tell_breakpoints_objfile_changed (o->objfile);
+	      tell_objc_msgsend_cacher_objfile_changed (o->objfile);
+            }
 	  dyld_remove_objfile (o);
 	  dyld_objfile_entry_clear (o);
 	}

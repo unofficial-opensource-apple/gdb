@@ -145,6 +145,15 @@ struct target_waitstatus
 	int syscall_id;
       }
     value;
+
+    /* APPLE LOCAL: The EXC_BAD_ACCESS actually has more useful information
+       that we would like to convey, namely the PID, and the access violation
+       subtype.  It would be nice to add this as a void * pointer, but it is not
+       at all clear how to track the life-cycle of this field (since it gets copied
+       all over in get_last_wait_status.)  So I am just tacking on a couple of extra
+       fields.  For now code == -1 means there's no interesting data here.  */
+    int code;
+    CORE_ADDR address;
   };
 
 /* Possible types of events that the inferior handler will have to
@@ -1284,7 +1293,5 @@ extern void push_remote_target (char *name, int from_tty);
 void target_ignore (void);
 
 void update_current_target (void);
-
-void cleanup_target (struct target_ops *);
 
 #endif /* !defined (TARGET_H) */

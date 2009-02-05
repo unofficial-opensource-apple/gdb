@@ -299,6 +299,16 @@ static int core_thread_alive (ptid_t pid)
 }
 
 static void
+core_prepare_to_store (void)
+{
+}
+
+static void
+core_store_registers (int regno)
+{
+}
+
+static void
 init_macho_core_ops ()
 {
   macho_core_ops.to_shortname = "core-macho";
@@ -309,6 +319,8 @@ init_macho_core_ops ()
   macho_core_ops.to_attach = find_default_attach;
   macho_core_ops.to_detach = core_detach;
   macho_core_ops.to_fetch_registers = core_fetch_registers;
+  macho_core_ops.to_prepare_to_store = core_prepare_to_store;
+  macho_core_ops.to_store_registers = core_store_registers;
   macho_core_ops.to_xfer_memory = xfer_memory;
   macho_core_ops.to_files_info = core_files_info;
   macho_core_ops.to_create_inferior = find_default_create_inferior;

@@ -407,9 +407,9 @@ static void kdp_reattach_command (char *args, int from_tty)
 
   host = argv[0];
 
-  kdp_open(NULL, 0);
+  kdp_open (NULL, 0);
 
-  kdp_reset(&c);
+  kdp_reset (&c);
 
 #if TARGET_POWERPC
   kdp_set_little_endian (&c);
@@ -423,11 +423,8 @@ static void kdp_reattach_command (char *args, int from_tty)
   if (kdpret != RR_SUCCESS) 
     error ("unable to create connection for host \"%s\": %s", args, kdp_return_string (kdpret));
   
-  c.request->reattach_req.hdr.request = KDP_REATTACH;
-  c.request->reattach_req.req_reply_port = c.reqport;
+  kdpret = kdp_reattach (&c);
 
-  kdpret = kdp_transaction (&c, c.request, c.response, "kdp_reattach");
-  c.connected = 0;
   if (kdpret != RR_SUCCESS) 
     warning ("unable to disconnect host: %s", kdp_return_string (kdpret));
       if (kdp_is_bound (&c)) 
@@ -445,10 +442,62 @@ static void kdp_reattach_command (char *args, int from_tty)
 
   update_current_target ();
 
-  kdp_mourn_inferior();
+  kdp_mourn_inferior ();
 
   kdp_open (NULL, 0);
+
   kdp_attach (host, 0);
+}
+
+static void kdp_reboot_command (char *args, int from_tty)
+{
+  kdp_return_t kdpret;
+  char **argv;
+  char *host;
+  
+  argv = buildargv (args);
+
+  if ((argv == NULL) || (argv[0] == NULL) || (argv[1] != NULL))
+    error ("usage: kdp-reboot <hostname>");
+
+  host = argv[0];
+
+  kdp_open (NULL, 0);
+
+  kdp_reset (&c);
+
+#if TARGET_POWERPC
+  kdp_set_little_endian (&c);
+#elif TARGET_I386
+  kdp_set_big_endian (&c);
+#else
+#error "unsupported architecture"
+#endif
+
+  kdpret = kdp_create (&c, logger, argv[0], kdp_default_port, kdp_timeout, kdp_retries);
+  if (kdpret != RR_SUCCESS) 
+    error ("unable to create connection for host \"%s\": %s", args, kdp_return_string (kdpret));
+  
+  kdpret = kdp_hostreboot (&c);
+
+  if (kdpret != RR_SUCCESS) 
+    warning ("unable to disconnect host: %s", kdp_return_string (kdpret));
+      if (kdp_is_bound (&c)) 
+	{
+	  kdpret = kdp_destroy (&c);
+	  if (kdpret != RR_SUCCESS)
+	    error ("unable to deallocate KDP connection: %s", kdp_return_string (kdpret));
+	}
+
+  kdp_ops.to_has_all_memory = 0;
+  kdp_ops.to_has_memory = 0;
+  kdp_ops.to_has_stack = 0;
+  kdp_ops.to_has_registers = 0;
+  kdp_ops.to_has_execution = 0;
+
+  update_current_target ();
+
+  kdp_mourn_inferior ();
 }
 
 static void
@@ -1240,6 +1289,8 @@ _initialize_remote_kdp ()
 
   add_com ("kdp-reattach", class_run, kdp_reattach_command,
 	   "Re-attach to a (possibly connected) remote Mac OS X kernel.\nThe kernel must support the reattach packet.");
+  add_com ("kdp-reboot", class_run, kdp_reboot_command,
+	   "Reboot a (possibly connected) remote Mac OS X kernel.\nThe kernel must support the reboot packet.");
   add_com ("kdp-detach", class_run, kdp_detach_command,
 	   "Reset a (possibly disconnected) remote Mac OS X kernel.\n");
 

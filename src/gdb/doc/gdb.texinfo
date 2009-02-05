@@ -16833,7 +16833,7 @@ N.A.
 @subsubheading Synopsis
 
 @example
--file-list-globals @var{file} @var{image} @var{print-values} @var{filter_regex}
+-file-list-globals -file @var{file} -shlib @var{image} @var{print-values} -filter @var{filter_regex} -constants @var{constants}
 @end example
 
 List the globals defined in file @var{file} and image @var{image}.  If
@@ -16846,6 +16846,9 @@ then all globals are listed.
 @var{filter_regex} is optional.  If provided, then all statics whose names match
 the regex will be filtered out.
 
+@var{constants} is also optional. If provided, and set to 1, then no const statics will be printed
+with the exception of const pointers.
+
 @subsubheading @value{GDBN} Command
 
 There's no @value{GDBN} command which directly corresponds to this one.
@@ -16854,7 +16857,7 @@ There's no @value{GDBN} command which directly corresponds to this one.
 
 @smallexample
 (@value{GDBP})
--file-list-globals main.c gdb 1
+-file-list-globals -file main.c -shlib gdb -all-values
 ^done,globals=[@{name="tui_version",value="0"@},@{name="gdb_sysroot",value="0x0"@},...]
 (@value{GDBP})
 @end smallexample
@@ -16864,7 +16867,7 @@ with the file and the globals as the elements of the list, as in:
 
 @smallexample
 (@value{GDBP})
--file-list-globals "" gdb 0
+-file-list-globals -file "" -shlib gdb --no-values
 ^done,file=[filename="../../gdb/src/mmalloc/keys.c",globals=[]],file=[filename="../../gdb/src/mmalloc/mmap-sup.c",globals=[]],...]
 (@value{GDBP})
 @end smallexample
@@ -16873,7 +16876,7 @@ And if there are more than one shared library, the output will contain a list of
 
 @smallexample
 (@value{GDBP})
--file-list-globals "" "" 0
+-file-list-globals --file "" --shlib "" --no-values
 ^done,image=[imagename="/usr/lib/dyld"],image=[imagename="/usr/lib/libncurses.5.dylib"],image=[imagename="/usr/lib,image=[imagename="/build/gdb/gdb",file=[filename="../../gdb/src/mmalloc/keys.c",globals=[]],...]]
 (@value{GDBP})
 @end smallexample
@@ -16903,7 +16906,7 @@ N.A.
 @subsubheading Synopsis
 
 @example
- -file-list-statics @var{file} @var{image} @var{print-values} @var{filter_regex}
+ -file-list-statics -file @var{file} -shlib @var{image} @var{print-values} -filter @var{filter_regex} -constants @var{constants}
 @end example
 
 List the globals defined in file @var{file} and image @var{image}.  If
@@ -16919,6 +16922,9 @@ value for @var{image}, but it is ignored.
 @var{filter_regex} is optional.  If provided, then all statics whose names match
 the regex will be filtered out.
 
+@var{constants} is also optional. If provided and set to 1, then no const statics will be printed
+with the exception of const pointers.
+
 @subsubheading @value{GDBN} Command
 
 There's no @value{GDBN} command which directly corresponds to this one.
@@ -16927,7 +16933,7 @@ There's no @value{GDBN} command which directly corresponds to this one.
 
 @smallexample
 (@value{GDBP})
--file-list-statics breakpoint.c gdb 0
+-file-list-statics -file breakpoint.c -shlib gdb --no-values
 ^done,statics=[@{name="overlay_events_enabled"@},@{name="exception_catchpoint_throw_enabled"@},...]
 (@value{GDBP})
 @end smallexample

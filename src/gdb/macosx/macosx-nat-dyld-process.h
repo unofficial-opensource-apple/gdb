@@ -17,6 +17,16 @@ struct target_ops;
 struct dyld_objfile_entry *dyld_lookup_objfile_entry
 PARAMS ((struct dyld_objfile_info *info, struct objfile *o));
 
+enum dyld_reload_result 
+  { 
+    DYLD_NO_CHANGE = 0,
+    DYLD_UPGRADE,
+    DYLD_DOWNGRADE
+  };
+
+enum dyld_reload_result dyld_should_reload_objfile_for_flags
+PARAMS ((struct dyld_objfile_entry *e));
+
 void dyld_add_inserted_libraries
 PARAMS ((struct dyld_objfile_info *info, const struct dyld_path_info *d));
 
@@ -28,6 +38,9 @@ PARAMS ((const struct macosx_inferior_status *s, struct dyld_objfile_info *new))
 
 void dyld_resolve_shlibs_dyld
 PARAMS ((const struct macosx_inferior_status *s, struct dyld_objfile_info *new));
+
+void dyld_load_library
+PARAMS ((const struct dyld_path_info *d, struct dyld_objfile_entry *e));
 
 void dyld_load_libraries
 PARAMS ((const struct dyld_path_info *d, struct dyld_objfile_info *result));
@@ -84,6 +97,12 @@ int dyld_minimal_load_flag
 PARAMS ((const struct dyld_path_info *d,
 	 struct dyld_objfile_entry *e));
 
+int dyld_default_load_flag
+PARAMS ((const struct dyld_path_info *d,
+	 struct dyld_objfile_entry *e));
+
 char *dyld_find_dylib_name (CORE_ADDR addr, unsigned int ncmds);
+
+void dyld_load_symfile (struct dyld_objfile_entry *e);
 
 #endif /* __GDB_MACOSX_NAT_DYLD_PROCESS_H__ */
